@@ -87,6 +87,7 @@ import { renderInstances } from "./views/instances.ts";
 import { renderLogs } from "./views/logs.ts";
 import { renderNodes } from "./views/nodes.ts";
 import { renderOverview } from "./views/overview.ts";
+import { renderServicesStatus } from "./views/services-status.ts";
 import { renderServicesView } from "./views/services.ts";
 import { renderSessions } from "./views/sessions.ts";
 import { renderSkills } from "./views/skills.ts";
@@ -965,6 +966,18 @@ export function renderApp(state: AppViewState) {
                   // Navigate back to skills tab
                   state.tab = "skills";
                 },
+              })
+            : nothing
+        }
+
+        ${
+          state.tab === "service-status"
+            ? renderServicesStatus({
+                services: state.services,
+                loading: state.servicesLoading,
+                error: state.servicesError,
+                onEnable: (serviceId) => state.enableService(serviceId),
+                onDisable: (serviceId) => state.disableService(serviceId),
               })
             : nothing
         }
