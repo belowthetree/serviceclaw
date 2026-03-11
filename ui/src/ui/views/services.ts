@@ -85,14 +85,6 @@ export type ServicesViewProps = {
   onServiceCancel?: () => void;
 };
 
-// Trigger type labels for the service list
-const triggerLabels: Record<string, string> = {
-  cron: "Scheduled",
-  webhook: "Webhook",
-  message: "Message",
-  web: "Web Interface",
-};
-
 export function renderServicesView(props: ServicesViewProps): TemplateResult {
   const handleWizardSubmit = (e: Event) => {
     const detail = (e as CustomEvent).detail;
@@ -101,97 +93,6 @@ export function renderServicesView(props: ServicesViewProps): TemplateResult {
 
   const handleWizardCancel = () => {
     props.onServiceCancel?.();
-  };
-
-  // Render action buttons for service list
-  const renderListActionButtons = (service: ServiceWithStats): TemplateResult => {
-    const { id, state } = service;
-
-    if (state === "enabled") {
-      return html`
-        <button
-          class="btn btn-sm btn-secondary"
-          data-testid="service-action-${id}"
-          @click=${() => props.onServiceDisable?.(id)}
-          ?disabled=${props.loading}
-        >
-          Disable
-        </button>
-      `;
-    }
-
-    if (state === "disabled") {
-      return html`
-        <button
-          class="btn btn-sm btn-primary"
-          data-testid="service-action-${id}"
-          @click=${() => props.onServiceEnable?.(id)}
-          ?disabled=${props.loading}
-        >
-          Enable
-        </button>
-      `;
-    }
-
-    return html`<span class="action-placeholder" data-testid="service-action-${id}">-</span>`;
-  };
-
-  // Render service row for the list view
-  const renderServiceRow = (service: ServiceWithStats): TemplateResult => {
-    const stateInfo = getStateInfo(service.state);
-
-    return html`
-      <div
-        class="service-row"
-        data-testid="service-row-${service.id}"
-        role="listitem"
-      >
-        <div class="service-row__info">
-          <div class="service-row__name">${service.name}</div>
-          <div class="service-row__meta">
-            <span class="service-row__trigger">${triggerLabels[service.triggerType] || service.triggerType}</span>
-          </div>
-        </div>
-        <div class="service-row__status">
-          <span
-            class="service-row__state-badge"
-            style="color: ${stateInfo.color}; background: ${stateInfo.bgColor};"
-          >
-            ${stateInfo.label}
-          </span>
-        </div>
-        <div class="service-row__actions">
-          ${renderListActionButtons(service)}
-          <button
-            class="btn btn-sm btn-secondary"
-            @click=${() => props.onServiceConfigure?.(service.id)}
-            ?disabled=${props.loading}
-          >
-            Configure
-          </button>
-        </div>
-      </div>
-    `;
-  };
-
-  // Render service list section
-  const renderServiceList = (): TemplateResult | typeof nothing => {
-    if (props.services.length === 0) {
-      return nothing;
-    }
-
-    return html`
-      <div class="services-list-section">
-        <div class="services-list" data-testid="service-list" role="list" aria-label="Installed services">
-          <div class="services-list__header" role="row" aria-hidden="true">
-            <div class="services-list__header-cell services-list__header-name">Service</div>
-            <div class="services-list__header-cell services-list__header-status">Status</div>
-            <div class="services-list__header-cell services-list__header-actions">Actions</div>
-          </div>
-          ${props.services.map((service) => renderServiceRow(service))}
-        </div>
-      </div>
-    `;
   };
 
   const renderServiceCard = (service: ServiceWithStats): TemplateResult => {
@@ -324,13 +225,10 @@ export function renderServicesView(props: ServicesViewProps): TemplateResult {
           : nothing
       }
 
-      ${renderServiceList()}
-
       ${
         props.services.length === 0 && !props.loading
           ? renderEmptyState()
           : html`
-          <div class="services-section-title">Service Details</div>
           <div class="services-grid">
             ${props.services.map((service) => renderServiceCard(service))}
           </div>
@@ -419,122 +317,6 @@ export const servicesViewStyles = `
     letter-spacing: 0.5px;
   }
 
-  .services-list-section {
-    margin-bottom: 16px;
-  }
-
-  .services-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .services-list__header {
-    display: grid;
-    grid-template-columns: 1fr 120px 180px;
-    gap: 16px;
-    padding: 12px 16px;
-    background: var(--surface-secondary, #27272a);
-    border-radius: 8px;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-secondary, #a1a1aa);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-
-  .services-list__header-cell {
-    display: flex;
-    align-items: center;
-  }
-
-  .services-list__header-name {
-    flex: 1;
-  }
-
-  .services-list__header-status {
-    width: 120px;
-    justify-content: center;
-  }
-
-  .services-list__header-actions {
-    width: 180px;
-    justify-content: flex-end;
-  }
-
-  .service-row {
-    display: grid;
-    grid-template-columns: 1fr 120px 180px;
-    gap: 16px;
-    align-items: center;
-    padding: 16px;
-    background: var(--surface-primary, #18181b);
-    border: 1px solid var(--border-default, #3f3f46);
-    border-radius: 8px;
-    transition: border-color 0.15s ease;
-  }
-
-  .service-row:hover {
-    border-color: var(--border-hover, #52525b);
-  }
-
-  .service-row__info {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 0;
-  }
-
-  .service-row__name {
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--text-primary, #e4e4e7);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .service-row__meta {
-    display: flex;
-    gap: 8px;
-  }
-
-  .service-row__trigger {
-    font-size: 12px;
-    color: var(--text-tertiary, #71717a);
-  }
-
-  .service-row__status {
-    display: flex;
-    justify-content: center;
-  }
-
-  .service-row__state-badge {
-    font-size: 11px;
-    font-weight: 500;
-    padding: 4px 10px;
-    border-radius: 20px;
-    border: 1px solid;
-    white-space: nowrap;
-  }
-
-  .service-row__actions {
-    display: flex;
-    gap: 8px;
-    justify-content: flex-end;
-  }
-
-  .btn-sm {
-    padding: 6px 12px;
-    font-size: 12px;
-  }
-
-  .action-placeholder {
-    font-size: 13px;
-    color: var(--text-tertiary, #71717a);
-    padding: 6px 12px;
-  }
-
   .services-empty {
     text-align: center;
     padding: 64px 24px;
@@ -601,13 +383,19 @@ export const servicesViewStyles = `
   }
 
   .service-card {
-    background: var(--bg-secondary, #18181b);
+    background: var(--surface-primary, #27272a);
     border: 1px solid var(--border-default, #3f3f46);
     border-radius: 12px;
     padding: 20px;
     display: flex;
     flex-direction: column;
     gap: 12px;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  }
+
+  .service-card:hover {
+    border-color: var(--border-hover, #52525b);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   }
 
   .service-card__header {
