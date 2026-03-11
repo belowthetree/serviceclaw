@@ -746,7 +746,7 @@ Max Concurrent: 4 (Waves 1 & 2)
 
 ---
 
-- [ ] 11. Integrate view into app state
+- [x] 11. Integrate view into app state
 
   **What to do**:
   - Update `ui/src/ui/app.ts`:
@@ -798,7 +798,7 @@ Max Concurrent: 4 (Waves 1 & 2)
 
 ---
 
-- [ ] 12. Integrate view into app rendering
+- [x] 12. Integrate view into app rendering
 
   **What to do**:
   - Update `ui/src/ui/app-render.ts`:
@@ -850,7 +850,7 @@ Max Concurrent: 4 (Waves 1 & 2)
 
 ---
 
-- [ ] 13. Write Playwright E2E tests
+- [x] 13. Write Playwright E2E tests
 
   **What to do**:
   - Create `ui/e2e/services-status.spec.ts`
