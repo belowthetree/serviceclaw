@@ -428,6 +428,19 @@ export class OpenClawApp extends LitElement {
 
   protected updated(changed: Map<PropertyKey, unknown>) {
     handleUpdated(this as unknown as Parameters<typeof handleUpdated>[0], changed);
+
+    // Load services when connected or when switching to services tab
+    if (
+      changed.has("connected") &&
+      this.connected &&
+      !this.servicesLoading &&
+      this.services.length === 0
+    ) {
+      void this.loadServices();
+    }
+    if (changed.has("tab") && this.tab === "services" && this.connected && !this.servicesLoading) {
+      void this.loadServices();
+    }
   }
 
   connect() {
