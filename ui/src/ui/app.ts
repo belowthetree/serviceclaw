@@ -57,6 +57,12 @@ import type { CronFieldErrors } from "./controllers/cron.ts";
 import type { DevicePairingList } from "./controllers/devices.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import type { ExecApprovalsFile, ExecApprovalsSnapshot } from "./controllers/exec-approvals.ts";
+import {
+  loadServices as loadServicesController,
+  enableService as enableServiceController,
+  disableService as disableServiceController,
+  type ServicesStatusState,
+} from "./controllers/services-status.js";
 import type { SkillMessage } from "./controllers/skills.ts";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway.ts";
 import type { Tab } from "./navigation.ts";
@@ -349,6 +355,8 @@ export class OpenClawApp extends LitElement {
   @state() skillsError: string | null = null;
   @state() servicesLoading = false;
   @state() servicesError: string | null = null;
+  @state() services: import("./types.js").ServiceWithStats[] = [];
+  @state() servicesBusyId: string | null = null;
   @state() skillsFilter = "";
   @state() skillEdits: Record<string, string> = {};
   @state() skillsBusyKey: string | null = null;
@@ -464,6 +472,43 @@ export class OpenClawApp extends LitElement {
   async loadAssistantIdentity() {
     await loadAssistantIdentityInternal(this);
   }
+
+  private getServicesState(): ServicesStatusState {
+    return {
+      client: this.client,
+      connected: this.connected,
+      servicesLoading: this.servicesLoading,
+      services: this.services,
+      servicesError: this.servicesError,
+      servicesBusyId: this.servicesBusyId,
+    };
+  }
+
+  loadServices = async () => {
+    const state = this.getServicesState();
+    await loadServicesController(state);
+    this.servicesLoading = state.servicesLoading;
+    this.services = state.services;
+    this.servicesError = state.servicesError;
+  };
+
+  enableService = async (serviceId: string) => {
+    const state = this.getServicesState();
+    await enableServiceController(state, serviceId);
+    this.servicesLoading = state.servicesLoading;
+    this.services = state.services;
+    this.servicesError = state.servicesError;
+    this.servicesBusyId = state.servicesBusyId;
+  };
+
+  disableService = async (serviceId: string) => {
+    const state = this.getServicesState();
+    await disableServiceController(state, serviceId);
+    this.servicesLoading = state.servicesLoading;
+    this.services = state.services;
+    this.servicesError = state.servicesError;
+    this.servicesBusyId = state.servicesBusyId;
+  };
 
   applySettings(next: UiSettings) {
     applySettingsInternal(this as unknown as Parameters<typeof applySettingsInternal>[0], next);

@@ -1,0 +1,47 @@
+Task 11: Integrate services-status into app state - Verification Evidence
+================================================================================
+
+Date: 2026-03-11
+Task: Integrate services-status into app state
+
+CHANGES MADE
+------------
+
+1. Import added to ui/src/ui/app.ts (lines 61-66):
+   - Imported loadServicesController
+   - Imported enableServiceController  
+   - Imported disableServiceController
+   - Imported ServicesStatusState type
+
+2. State properties added to OpenClawApp class:
+   - @state() services: ServiceWithStats[] = [] (line 353)
+   - @state() servicesBusyId: string | null = null (line 354)
+   - Existing: servicesLoading, servicesError
+
+3. Methods added to OpenClawApp class (lines 476-509):
+   - getServicesState(): ServicesStatusState - helper to build state object
+   - loadServices() - delegates to loadServicesController
+   - enableService(serviceId: string) - delegates to enableServiceController
+   - disableService(serviceId: string) - delegates to disableServiceController
+
+VERIFICATION RESULT
+-------------------
+
+TypeScript compilation check: PASSED
+- No errors in ui/src/ui/app.ts
+- All controller imports resolved correctly
+- All type annotations valid
+
+PATTERN FOLLOWED
+----------------
+
+The implementation follows the exact pattern from skills integration:
+- State properties use @state() decorator for reactive updates
+- Methods use arrow functions to preserve 'this' context
+- Controller delegation follows same pattern as loadSkills
+- State updates sync back from controller-modified state object
+
+Files modified:
+- ui/src/ui/app.ts
+
+Evidence recorded: Task completed successfully

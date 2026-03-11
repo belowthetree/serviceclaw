@@ -8,6 +8,24 @@ import { html, nothing, type TemplateResult } from "lit";
 import { icons } from "../icons.ts";
 import type { ServiceSummary, ServiceState } from "../types.ts";
 
+const warningIcon = html`
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path
+      d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
+    />
+    <line x1="12" y1="9" x2="12" y2="13" />
+    <line x1="12" y1="17" x2="12.01" y2="17" />
+  </svg>
+`;
+
+const infoIcon = html`
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="12" cy="12" r="10" />
+    <line x1="12" y1="16" x2="12" y2="12" />
+    <line x1="12" y1="8" x2="12.01" y2="8" />
+  </svg>
+`;
+
 export type ServicesStatusProps = {
   services: ServiceSummary[];
   loading: boolean;
@@ -16,7 +34,6 @@ export type ServicesStatusProps = {
   onDisable: (serviceId: string) => void;
 };
 
-// Map service states to CSS chip classes
 const stateChipClasses: Record<ServiceState, string> = {
   enabled: "chip-ok",
   disabled: "chip-warn",
@@ -98,7 +115,6 @@ function renderActionButtons(
     `;
   }
 
-  // For other states, show no action button (state is transitional or error)
   return html`<span class="action-placeholder" data-testid="service-action-${id}">-</span>`;
 }
 
@@ -129,7 +145,6 @@ function renderServiceRow(
   `;
 }
 
-// Main render function
 export function renderServicesStatus(props: ServicesStatusProps): TemplateResult {
   const { services, loading, error, onEnable, onDisable } = props;
 
@@ -171,7 +186,7 @@ export function renderServicesStatus(props: ServicesStatusProps): TemplateResult
         !loading && services.length === 0 && !error
           ? html`
             <div class="services-status-empty" role="status">
-              <div class="services-status-empty__icon">${icons.info}</div>
+              <div class="services-status-empty__icon">${infoIcon}</div>
               <p class="services-status-empty__message">
                 No services installed yet. Install a service to get started.
               </p>
@@ -203,7 +218,6 @@ export function renderServicesStatus(props: ServicesStatusProps): TemplateResult
   `;
 }
 
-// CSS styles for the services status view
 export const servicesStatusStyles = `
   .services-status-view {
     padding: 24px;
@@ -258,6 +272,16 @@ export const servicesStatusStyles = `
     flex-shrink: 0;
   }
 
+  .services-status-error__icon svg {
+    width: 100%;
+    height: 100%;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
   .services-status-error__message {
     font-size: 14px;
     color: var(--accent-error, #ef4444);
@@ -301,6 +325,16 @@ export const servicesStatusStyles = `
     height: 48px;
     color: var(--text-secondary, #a1a1aa);
     margin-bottom: 16px;
+  }
+
+  .services-status-empty__icon svg {
+    width: 100%;
+    height: 100%;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
 
   .services-status-empty__message {
