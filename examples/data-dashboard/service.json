@@ -1,0 +1,85 @@
+{
+  "$schema": "https://openclaw.ai/schemas/service-v1.json",
+  "id": "data-dashboard",
+  "name": "Data Dashboard",
+  "description": "Real-time web dashboard with configurable widgets for weather, tasks, calendar, and system metrics",
+  "version": "1.0.0",
+  "author": "OpenClaw",
+  "category": "monitoring",
+  "trigger": {
+    "type": "web",
+    "path": "/dashboard/data",
+    "auth": "gateway"
+  },
+  "config": {
+    "title": {
+      "type": "string",
+      "description": "Dashboard title displayed in the header",
+      "default": "My Dashboard",
+      "required": true
+    },
+    "widgets": {
+      "type": "array",
+      "description": "Widgets to display on the dashboard",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["weather", "tasks", "calendar", "clock", "text", "system"],
+            "description": "Widget type"
+          },
+          "title": {
+            "type": "string",
+            "description": "Widget title"
+          },
+          "config": {
+            "type": "object",
+            "description": "Widget-specific configuration"
+          }
+        }
+      },
+      "default": [
+        { "type": "clock", "title": "Current Time" },
+        { "type": "weather", "title": "Weather" },
+        { "type": "tasks", "title": "Tasks" }
+      ]
+    },
+    "refreshInterval": {
+      "type": "number",
+      "description": "Auto-refresh interval in seconds",
+      "default": 60,
+      "minimum": 10,
+      "maximum": 3600
+    },
+    "theme": {
+      "type": "string",
+      "enum": ["light", "dark", "auto"],
+      "default": "auto",
+      "description": "Dashboard color theme"
+    },
+    "layout": {
+      "type": "string",
+      "enum": ["grid", "list"],
+      "default": "grid",
+      "description": "Widget layout style"
+    }
+  },
+  "requires": {
+    "skills": [],
+    "optionalSkills": ["weather", "tasks", "calendar"],
+    "tools": ["web_fetch"],
+    "config": []
+  },
+  "capabilities": {
+    "privilegedTools": [],
+    "network": true,
+    "filesystem": false,
+    "shell": false,
+    "browser": false
+  },
+  "execution": {
+    "sessionTarget": "main",
+    "timeout": 30000
+  }
+}

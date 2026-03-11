@@ -1,3 +1,11 @@
+export type CronJobMetadata = {
+  serviceId?: string;
+  triggerId?: string;
+  triggerType?: "cron" | "webhook" | "message" | "event";
+  managedBy?: string;
+  [key: string]: unknown;
+};
+
 export type CronJobBase<TSchedule, TSessionTarget, TWakeMode, TPayload, TDelivery, TFailureAlert> =
   {
     id: string;
@@ -15,4 +23,5 @@ export type CronJobBase<TSchedule, TSessionTarget, TWakeMode, TPayload, TDeliver
     payload: TPayload;
     delivery?: TDelivery;
     failureAlert?: TFailureAlert;
+    metadata?: CronJobMetadata;
   };

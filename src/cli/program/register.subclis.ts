@@ -307,6 +307,15 @@ const entries: SubCliEntry[] = [
       mod.registerCompletionCli(program);
     },
   },
+  {
+    name: "service",
+    description: "Manage OpenClaw services (declarative automations)",
+    hasSubcommands: true,
+    register: async (program) => {
+      const mod = await import("../service.js");
+      mod.registerServiceCli(program);
+    },
+  },
 ];
 
 export function getSubCliEntries(): SubCliEntry[] {

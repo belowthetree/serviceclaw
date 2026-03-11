@@ -1,6 +1,6 @@
-import type { FailoverReason } from "../agents/pi-embedded-helpers.js";
-import type { ChannelId } from "../channels/plugins/types.js";
-import type { CronJobBase } from "./types-shared.js";
+import type { CronJobMetadata } from "./types-shared.js";
+
+export type { CronJobMetadata } from "./types-shared.js";
 
 export type CronSchedule =
   | { kind: "at"; at: string }
@@ -106,6 +106,10 @@ type CronAgentTurnPayload = {
 type CronAgentTurnPayloadPatch = {
   kind: "agentTurn";
 } & Partial<CronAgentTurnPayloadFields>;
+
+import type { FailoverReason } from "../agents/pi-embedded-helpers.js";
+import type { ChannelId } from "../channels/plugins/types.js";
+import type { CronJobBase } from "./types-shared.js";
 export type CronJobState = {
   nextRunAtMs?: number;
   runningAtMs?: number;
@@ -156,4 +160,29 @@ export type CronJobPatch = Partial<Omit<CronJob, "id" | "createdAtMs" | "state" 
   payload?: CronPayloadPatch;
   delivery?: CronDeliveryPatch;
   state?: Partial<CronJobState>;
+};
+
+/**
+ * Options for listing cron jobs filtered by service
+ */
+export type CronListByServiceOptions = {
+  serviceId: string;
+  includeDisabled?: boolean;
+};
+
+/**
+ * Options for bulk operations on service cron jobs
+ */
+export type CronBulkOperationOptions = {
+  serviceId: string;
+  jobIds?: string[];
+};
+
+/**
+ * Result of a bulk operation on cron jobs
+ */
+export type CronBulkOperationResult = {
+  success: boolean;
+  affectedCount: number;
+  errors: Array<{ jobId: string; error: string }>;
 };

@@ -60,6 +60,8 @@ type SettingsHost = {
   themeMediaHandler: ((event: MediaQueryListEvent) => void) | null;
   pendingGatewayUrl?: string | null;
   pendingGatewayToken?: string | null;
+  servicesLoading?: boolean;
+  servicesError?: string | null;
 };
 
 export function applySettings(host: SettingsHost, next: UiSettings) {
@@ -227,6 +229,10 @@ export async function refreshActiveTab(host: SettingsHost) {
     await loadDevices(host as unknown as OpenClawApp);
     await loadConfig(host as unknown as OpenClawApp);
     await loadExecApprovals(host as unknown as OpenClawApp);
+  }
+  if (host.tab === "services") {
+    host.servicesLoading = false;
+    host.servicesError = null;
   }
   if (host.tab === "chat") {
     await refreshChat(host as unknown as Parameters<typeof refreshChat>[0]);

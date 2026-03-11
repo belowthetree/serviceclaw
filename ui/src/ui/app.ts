@@ -347,6 +347,8 @@ export class OpenClawApp extends LitElement {
   @state() skillsLoading = false;
   @state() skillsReport: SkillStatusReport | null = null;
   @state() skillsError: string | null = null;
+  @state() servicesLoading = false;
+  @state() servicesError: string | null = null;
   @state() skillsFilter = "";
   @state() skillEdits: Record<string, string> = {};
   @state() skillsBusyKey: string | null = null;
