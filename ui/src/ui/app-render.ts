@@ -966,8 +966,14 @@ export function renderApp(state: AppViewState) {
                   })}
                   <div class="services-divider"></div>
                   ${renderServicesView({
+                    services: state.services,
                     loading: state.servicesLoading,
                     error: state.servicesError,
+                    onServiceEnable: (serviceId) => state.enableService(serviceId),
+                    onServiceDisable: (serviceId) => state.disableService(serviceId),
+                    onServiceConfigure: (serviceId) => {
+                      console.log("Configure service:", serviceId);
+                    },
                     onServiceSubmit: (detail) => {
                       console.log("Service submit:", detail);
                     },
