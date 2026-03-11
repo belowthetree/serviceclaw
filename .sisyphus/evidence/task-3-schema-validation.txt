@@ -1,0 +1,32 @@
+Task 3: Create protocol schemas for services methods
+===============================================
+
+File created: src/gateway/protocol/schema/services.ts
+
+Schemas defined:
+- ServicesStatusRequestSchema (empty params)
+- ServicesStatusResponseSchema (array of ServiceSummary)
+- ServicesEnableRequestSchema ({ serviceId: string })
+- ServicesEnableResponseSchema (ok: boolean, serviceId: string)
+- ServicesDisableRequestSchema ({ serviceId: string })
+- ServicesDisableResponseSchema (ok: boolean, serviceId: string)
+
+Supporting schemas:
+- ServiceStateSchema (union of 10 lifecycle states)
+- ServiceCategorySchema (union of 6 categories)
+- TriggerTypeSchema (union of 4 trigger types)
+- ServiceSummarySchema (mirrors ServiceIndexEntry)
+
+TypeScript types exported:
+- ServiceState, ServiceCategory, TriggerType, ServiceSummary
+- ServicesStatusRequest, ServicesStatusResponse
+- ServicesEnableRequest, ServicesEnableResponse
+- ServicesDisableRequest, ServicesDisableResponse
+
+Verification:
+✅ File compiles without TypeScript errors (npx tsc --noEmit)
+✅ Follows existing schema patterns from agents-models-skills.ts
+✅ Uses NonEmptyString from primitives.ts
+✅ All object schemas use additionalProperties: false
+✅ Response schemas include ok boolean field (standard pattern)
+✅ Optional fields use Type.Optional()
