@@ -230,7 +230,7 @@ export async function refreshActiveTab(host: SettingsHost) {
     await loadConfig(host as unknown as OpenClawApp);
     await loadExecApprovals(host as unknown as OpenClawApp);
   }
-  if (host.tab === "services") {
+  if (host.tab === "service-config") {
     host.servicesLoading = false;
     host.servicesError = null;
   }

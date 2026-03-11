@@ -233,6 +233,28 @@ describe("service CLI integration", () => {
   let registry: ServiceRegistry;
   let program: Command;
 
+  const sampleManifest: ServiceManifest = {
+    id: "integration-sample",
+    name: "Integration Sample Service",
+    description: "A sample service for integration tests",
+    version: "1.0.0",
+    trigger: {
+      type: "cron",
+      schedule: "0 8 * * *",
+    },
+    config: {},
+    requires: {
+      skills: [],
+      tools: [],
+    },
+    capabilities: {
+      network: false,
+      filesystem: false,
+      shell: false,
+      browser: false,
+    },
+  };
+
   beforeEach(async () => {
     tempDir = path.join(os.tmpdir(), `service-integration-${Date.now()}`);
     await fs.mkdir(tempDir, { recursive: true });
@@ -275,7 +297,7 @@ describe("service CLI integration", () => {
   });
 
   describe("service lifecycle", () => {
-    const sampleManifest: ServiceManifest = {
+    const lifecycleManifest: ServiceManifest = {
       id: "integration-test",
       name: "Integration Test Service",
       description: "Testing service lifecycle",
@@ -303,17 +325,17 @@ describe("service CLI integration", () => {
       await fs.mkdir(serviceDir, { recursive: true });
       await fs.writeFile(
         path.join(serviceDir, "service.json"),
-        JSON.stringify(sampleManifest, null, 2),
+        JSON.stringify(lifecycleManifest, null, 2),
       );
 
       // Register the service
-      const service = await registry.register(sampleManifest);
+      const service = await registry.register(lifecycleManifest);
       expect(service.id).toBe("integration-test");
       expect(service.state).toBe("pending");
     });
 
     it("should enable and disable a service", async () => {
-      await registry.register(sampleManifest);
+      await registry.register(lifecycleManifest);
 
       await registry.enable("integration-test");
       let service = await registry.get("integration-test");
@@ -325,7 +347,7 @@ describe("service CLI integration", () => {
     });
 
     it("should track state history", async () => {
-      await registry.register(sampleManifest);
+      await registry.register(lifecycleManifest);
       await registry.enable("integration-test");
       await registry.disable("integration-test");
 
@@ -334,7 +356,7 @@ describe("service CLI integration", () => {
     });
 
     it("should remove a service", async () => {
-      await registry.register(sampleManifest);
+      await registry.register(lifecycleManifest);
       expect(await registry.exists("integration-test")).toBe(true);
 
       await registry.unregister("integration-test");

@@ -5,6 +5,7 @@ import type { DevicePairingList } from "./controllers/devices.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import type { ExecApprovalsFile, ExecApprovalsSnapshot } from "./controllers/exec-approvals.ts";
 import type { SkillMessage } from "./controllers/skills.ts";
+import type { ServiceWithStats } from "./types.ts";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway.ts";
 import type { Tab } from "./navigation.ts";
 import type { UiSettings } from "./storage.ts";
@@ -231,7 +232,9 @@ export type AppViewState = {
     skillsError: string | null;
     skillsFilter: string;
     servicesLoading: boolean;
+    services: ServiceWithStats[];
     servicesError: string | null;
+    servicesBusyId: string | null;
     skillEdits: Record<string, string>;
     skillMessages: Record<string, SkillMessage>;
     skillsBusyKey: string | null;
@@ -303,6 +306,8 @@ export type AppViewState = {
     handleLoadNodes: () => Promise<void>;
     handleLoadPresence: () => Promise<void>;
     handleLoadSkills: () => Promise<void>;
+    enableService: (serviceId: string) => Promise<void>;
+    disableService: (serviceId: string) => Promise<void>;
     handleLoadDebug: () => Promise<void>;
     handleLoadLogs: () => Promise<void>;
     handleDebugCall: () => Promise<void>;

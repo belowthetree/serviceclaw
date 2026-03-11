@@ -954,7 +954,7 @@ export function renderApp(state: AppViewState) {
         }
 
         ${
-          state.tab === "services"
+          state.tab === "service-config"
             ? renderServicesView({
                 loading: state.servicesLoading,
                 error: state.servicesError,

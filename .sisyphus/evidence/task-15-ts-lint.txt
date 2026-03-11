@@ -1,0 +1,30 @@
+src/cli/service.test.ts(348,12): error TS2304: Cannot find name 'sampleManifest'.
+src/cli/service.test.ts(353,12): error TS2304: Cannot find name 'sampleManifest'.
+src/cli/service.test.ts(371,12): error TS2304: Cannot find name 'sampleManifest'.
+src/cli/service.ts(17,10): error TS2595: 'execa' can only be imported by using a default import.
+src/cli/service.ts(259,7): error TS2322: Type '{ ID: string; Name: string; State: string; Trigger: unknown; Updated: string; }[]' is not assignable to type 'Record<string, string>[]'.
+src/services/errors.test.ts(1197,30): error TS2322: Type 'Promise<number>' is not assignable to type 'Promise<void>'.
+src/services/errors.test.ts(1203,30): error TS2322: Type 'Promise<number>' is not assignable to type 'Promise<void>'.
+src/services/errors.test.ts(1209,30): error TS2322: Type 'Promise<number>' is not assignable to type 'Promise<void>'.
+src/services/integration.test.ts(1509,17): error TS2367: This comparison appears to be unintentional because the types '"installed"' and '"enabled"' have no overlap.
+src/services/lifecycle.ts(783,9): error TS2322: Type '"none" | "token"' is not assignable to type 'OpenClawPluginHttpRouteAuth'.
+src/services/lifecycle.ts(857,11): error TS2322: Type 'void' is not assignable to type '() => void'.
+src/services/lifecycle.ts(863,11): error TS2349: This expression is not callable.
+src/services/lifecycle.ts(933,78): error TS2345: Argument of type 'Error' is not assignable to parameter of type 'Record<string, unknown>'.
+  Index signature for type 'string' is missing in type 'Error'.
+src/services/lifecycle.ts(943,70): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'Record<string, unknown> | undefined'.
+src/services/lifecycle.ts(1023,84): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'Record<string, unknown> | undefined'.
+src/services/lifecycle.ts(1034,76): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'Record<string, unknown> | undefined'.
+src/services/lifecycle.ts(1044,89): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'Record<string, unknown> | undefined'.
+src/services/lifecycle.ts(1062,65): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'Record<string, unknown> | undefined'.
+src/services/lifecycle.ts(1187,71): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'Record<string, unknown> | undefined'.
+ui/e2e/services-status.spec.ts(303,57): error TS7031: Binding element 'page' implicitly has an 'any' type.
+ui/playwright.config.ts(1,39): error TS2307: Cannot find module '@playwright/test' or its corresponding type declarations.
+ui/src/ui/app-render.ts(957,11): error TS2367: This comparison appears to be unintentional because the types 'Tab' and '"services"' have no overlap.
+ui/src/ui/app-render.ts(976,33): error TS2339: Property 'services' does not exist on type 'AppViewState'.
+ui/src/ui/app-render.ts(979,48): error TS2339: Property 'enableService' does not exist on type 'AppViewState'.
+ui/src/ui/app-render.ts(980,49): error TS2339: Property 'disableService' does not exist on type 'AppViewState'.
+ui/src/ui/app-settings.ts(233,7): error TS2367: This comparison appears to be unintentional because the types 'Tab' and '"services"' have no overlap.
+ui/src/ui/services/config-wizard.ts(1383,3): error TS2484: Export declaration conflicts with exported declaration of 'ServiceConfigField'.
+ui/src/ui/views/services.ts(62,13): error TS2353: Object literal may only specify known properties, and 'validateOn' does not exist in type '{ inputType?: string | undefined; }'.
+ ELIFECYCLE  Command failed with exit code 2.

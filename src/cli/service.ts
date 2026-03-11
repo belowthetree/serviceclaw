@@ -14,7 +14,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { Command } from "commander";
-import { execa } from "execa";
+import execa from "execa";
 import JSON5 from "json5";
 import { defaultRuntime } from "../runtime.js";
 import { getServiceRegistry, type ServiceState } from "../services/registry.js";
@@ -242,7 +242,7 @@ async function listServices(options: ServiceListOptions): Promise<void> {
     ID: service.id,
     Name: service.name,
     State: formatState(service.state),
-    Trigger: service.triggerType,
+    Trigger: String(service.triggerType ?? ""),
     Updated: formatDate(service.updatedAt),
   }));
 
