@@ -624,7 +624,7 @@ Max Concurrent: 4 (Waves 1 & 2)
 
 ---
 
-- [ ] 9. Create services-status view component
+- [x] 9. Create services-status view component
 
   **What to do**:
   - Create `ui/src/ui/views/services-status.ts`
@@ -691,7 +691,7 @@ Max Concurrent: 4 (Waves 1 & 2)
 
 ---
 
-- [ ] 10. Add navigation tab for service status
+- [x] 10. Add navigation tab for service status
 
   **What to do**:
   - Update `ui/src/ui/navigation.ts`:

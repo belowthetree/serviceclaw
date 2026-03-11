@@ -1,0 +1,26 @@
+=== Task 10: Add navigation tab for service status ===
+
+Changes made to ui/src/ui/navigation.ts:
+
+1. TAB_GROUPS (line 10):
+   - Renamed: "services" → "service-config"
+   - Added: "service-status"
+
+2. Tab union type (lines 24-25):
+   - Renamed: "services" → "service-config"
+   - Added: "service-status"
+
+3. TAB_PATHS (lines 41-42):
+   - Renamed: services: "/services" → "service-config": "/service-config"
+   - Added: "service-status": "/service-status"
+
+4. iconForTab (lines 152-155):
+   - Renamed: case "services" → case "service-config"
+   - Added: case "service-status" returns "radio" icon
+
+Verification:
+- No TypeScript errors in navigation.ts
+- All references to "services" have been renamed to "service-config"
+- Both tabs appear in "agent" group
+- Icons: service-config uses "settings", service-status uses "radio"
+
