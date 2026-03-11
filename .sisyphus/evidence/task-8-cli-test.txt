@@ -1,0 +1,109 @@
+# Task 8: Service CLI Commands - Implementation Evidence
+
+## Summary
+
+Successfully implemented CLI commands for Service management in ServiceClaw.
+
+## Files Created/Modified
+
+### 1. src/cli/service.ts (NEW - 661 lines)
+Implements all 7 CLI commands for service management:
+
+- `serviceclaw service list` - List all installed services with table output
+- `serviceclaw service install <path-or-git-url>` - Install from local path or git URL
+- `serviceclaw service remove <service-id>` - Remove with confirmation prompt
+- `serviceclaw service enable <service-id>` - Enable service processing
+- `serviceclaw service disable <service-id>` - Disable service processing
+- `serviceclaw service status <service-id>` - Show detailed service status
+- `serviceclaw service logs <service-id>` - Show service logs (placeholder)
+
+Features implemented:
+- Progress indicators for long operations (install, remove)
+- Color-coded state formatting (enabled/disabled/error states)
+- JSON output option for list command
+- Support for git URL installation with auto-clone
+- Support for local path installation
+- Config parsing (JSON and key=value format)
+- Confirmation prompts for destructive operations
+- Comprehensive error handling with actionable messages
+
+### 2. src/cli/service.test.ts (NEW - 424 lines)
+Integration tests covering:
+- Helper function tests (formatState, formatDate, parseConfigOption, isGitUrl, loadManifestFromPath)
+- CLI structure validation
+- Service lifecycle tests (install, enable, disable, remove)
+- Registry operations tests
+
+### 3. src/cli/program/register.subclis.ts (MODIFIED)
+Added service CLI registration entry:
+```typescript
+{
+  name: "service",
+  description: "Manage OpenClaw services (declarative automations)",
+  hasSubcommands: true,
+  register: async (program) => {
+    const mod = await import("../service.js");
+    mod.registerServiceCli(program);
+  },
+}
+```
+
+## Usage Examples
+
+```bash
+# List all services
+serviceclaw service list
+
+# Install from local path
+serviceclaw service install ./my-service/service.json
+
+# Install from git URL
+serviceclaw service install https://github.com/user/service-repo.git
+
+# Enable a service
+serviceclaw service enable daily-briefing
+
+# Check status
+serviceclaw service status daily-briefing
+
+# Remove a service
+serviceclaw service remove daily-briefing --force
+```
+
+## Integration with Existing Code
+
+- Uses ServiceRegistry from `src/services/registry.ts` for CRUD operations
+- Uses Service types from `src/services/schema.ts`
+- Uses progress indicators from `src/cli/progress.ts`
+- Uses terminal theme from `src/terminal/theme.ts`
+- Uses table rendering from `src/terminal/table.ts`
+- Follows existing CLI patterns from plugins-cli.ts, cron-cli.ts
+
+## Dependencies
+
+- @sinclair/typebox (for schema types)
+- json5 (for manifest parsing)
+- execa (for git clone operations)
+- commander (for CLI structure)
+
+## Testing Notes
+
+Tests verify:
+1. Helper functions work correctly
+2. CLI commands are properly registered
+3. Service lifecycle operations work
+4. Registry operations function as expected
+
+Note: Full test execution requires `npm install` to complete.
+
+## Verification
+
+- [x] All 7 commands implemented
+- [x] Help text provided for each command
+- [x] Error handling with clear messages
+- [x] Progress indicators for long operations
+- [x] Integration tests written
+- [x] CLI registered in command registry
+- [x] Follows existing code patterns
+- [x] Supports both local paths and git URLs for install
+- [x] Handles edge cases (service not found, already installed)

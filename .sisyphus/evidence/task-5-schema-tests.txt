@@ -1,0 +1,198 @@
+================================================================================
+Task 5: Service Manifest JSON Schema - Evidence
+================================================================================
+Date: 2026-03-11
+Task: Create Service Manifest JSON Schema for serviceclaw
+
+================================================================================
+DELIVERABLES CREATED
+================================================================================
+
+1. src/services/schema.ts
+   - Complete JSON Schema for Service manifests using TypeBox
+   - All TypeScript types exported for use in the codebase
+   - Type guard function (isServiceManifest) for runtime validation
+   - JSON Schema export for external validation
+
+2. src/services/schema.test.ts
+   - Comprehensive test suite with 4 example service fixtures
+   - Tests for all 4 example services from docs/services/examples.md:
+     * Daily Briefing Service (cron trigger)
+     * Webhook Receiver Service (webhook trigger)
+     * Message Processor Service (message trigger)
+     * Data Dashboard Service (web trigger)
+
+================================================================================
+SCHEMA COVERAGE
+================================================================================
+
+The schema includes all required fields from the architecture design:
+
+Top-Level Fields:
+  ✓ $schema (optional)
+  ✓ id (required, kebab-case pattern)
+  ✓ name (required)
+  ✓ description (required)
+  ✓ version (required, semver pattern)
+  ✓ author (optional)
+  ✓ category (optional, enum)
+
+Trigger Types:
+  ✓ CronTrigger: type, schedule, timezone
+  ✓ WebhookTrigger: type, path, methods, auth
+  ✓ MessageTrigger: type, channels, filters
+  ✓ WebUITrigger: type, path, auth
+
+Config Schema:
+  ✓ All JSON Schema types: string, number, boolean, array, object
+  ✓ OpenClaw extension: secret
+  ✓ Type-specific properties: enum, items, properties, min/max
+  ✓ OpenClaw UI extensions: x-openclaw with inputType, dataSource, validateOn
+
+Requirements Block:
+  ✓ skills (required)
+  ✓ optionalSkills
+  ✓ tools (required)
+  ✓ optionalTools
+  ✓ env (environment variables)
+  ✓ config (OpenClaw config paths)
+
+Capabilities Block:
+  ✓ privilegedTools
+  ✓ requiresConfirmation
+  ✓ network (boolean)
+  ✓ filesystem (boolean)
+  ✓ shell (boolean)
+  ✓ browser (boolean)
+
+Execution Config:
+  ✓ agentId (optional)
+  ✓ sessionTarget (main/isolated)
+  ✓ timeout (ms)
+  ✓ retryPolicy (maxRetries, backoff, initialDelayMs)
+
+================================================================================
+EXAMPLE SERVICES VALIDATED
+================================================================================
+
+1. Daily Briefing Service (daily-briefing)
+   - Category: productivity
+   - Trigger: cron (0 8 * * *)
+   - Config: weatherLocation, newsSources, calendarIds, taskSources, delivery, format
+   - Requires: weather skill, web_fetch, message.send tools
+   - Capabilities: message.send privileged
+
+2. Webhook Receiver Service (webhook-receiver)
+   - Category: integration
+   - Trigger: webhook with signature auth
+   - Config: hookName, secret, source, actions, rateLimit
+   - Requires: webhook tool, gateway.webhooks.enabled config
+   - Capabilities: network access
+
+3. Message Processor Service (message-processor)
+   - Category: automation
+   - Trigger: message with filters
+   - Config: watches, rules, commands, rateLimit
+   - Requires: slack, discord tools; optional summarize, nano-pdf skills
+   - Capabilities: message.send privileged
+
+4. Data Dashboard Service (data-dashboard)
+   - Category: productivity
+   - Trigger: web with gateway auth
+   - Config: title, layout, theme, refreshInterval, widgets, access
+   - Requires: canvas skill, web tool
+   - Capabilities: network access
+
+================================================================================
+TYPE SAFETY
+================================================================================
+
+All TypeScript types exported:
+  - ServiceCategory, TriggerType, ConfigFieldType, WebhookAuthType
+  - SessionTarget, BackoffStrategy, MatchType, ResponseMode, WidgetType
+  - CronTrigger, WebhookTrigger, MessageTrigger, WebUITrigger, ServiceTrigger
+  - ConfigFieldExtensions, ServiceConfigField
+  - ServiceRequirements, ServiceCapabilities
+  - RetryPolicy, ServiceExecutionConfig
+  - ServiceManifest, ServiceConfig
+
+================================================================================
+VALIDATION FUNCTIONS
+================================================================================
+
+1. isServiceManifest(obj): Type guard function
+   - Validates required fields presence
+   - Validates id format (kebab-case)
+   - Validates version format (semver)
+   - Validates trigger type
+   
+2. Value.Check(ServiceManifestSchema, obj): TypeBox validation
+   - Full schema validation including nested objects
+   - Type coercion and default value handling
+   - Used in tests for comprehensive validation
+
+3. getServiceManifestJSONSchema(): Export function
+   - Returns JSON Schema for external use
+   - Compatible with documentation generation
+
+================================================================================
+TEST COVERAGE
+================================================================================
+
+Test Suites:
+  - TypeBox Schema Validation: Validates all 4 example services
+  - isServiceManifest Type Guard: Tests valid/invalid cases
+  - Required Fields Validation: Tests each required field
+  - Trigger Type Validation: Tests all 4 trigger types
+  - Category Validation: Tests all category enum values
+  - Config Field Types: Tests all config field types
+  - Optional Fields: Tests optional field handling
+  - Edge Cases: Tests empty objects, nested structures
+  - JSON Schema Export: Tests schema structure
+
+Total Tests: 40+
+
+================================================================================
+DEPENDENCIES
+================================================================================
+
+External:
+  - @sinclair/typebox: JSON Schema builder with TypeScript support
+  - @sinclair/typebox/value: Runtime validation
+
+Internal:
+  - stringEnum from src/agents/schema/typebox.ts (reuses existing utility)
+
+================================================================================
+COMPLIANCE WITH REQUIREMENTS
+================================================================================
+
+✓ JSON Schema file created at src/services/schema.ts
+✓ TypeScript types generated and exported
+✓ Tests created at src/services/schema.test.ts
+✓ Schema validates against 4 example Services from T1
+✓ Examples included in test fixtures
+✓ Schema follows existing type patterns in codebase
+✓ Uses TypeBox (same as rest of codebase)
+✓ Includes validation rules (required fields, type checking)
+✓ Supports all trigger types: cron, webhook, message, web
+
+MUST NOT DO (verified):
+  ✓ Did NOT implement runtime validation logic (only type guard)
+  ✓ Did NOT create Service directories
+  ✓ Did NOT modify existing code outside src/services/
+
+================================================================================
+NEXT STEPS (for T6 Core Infrastructure)
+================================================================================
+
+The schema is ready for:
+1. ServiceRegistry implementation
+2. ServiceInstance class implementation
+3. Service lifecycle state machine
+4. Installation/validation logic
+5. Webhook/Cron/Message trigger integration
+
+================================================================================
+END OF EVIDENCE
+================================================================================

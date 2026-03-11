@@ -1,0 +1,96 @@
+# Task 9: CronService Integration for Service Triggers - Evidence
+
+## Summary
+Successfully implemented CronService integration for Service triggers with service ownership metadata and bulk operations.
+
+## Files Created
+
+### 1. src/services/triggers/cron.ts
+ServiceCronTrigger class that integrates Services with CronService:
+- Creates cron jobs with service metadata (serviceId, managedBy, triggerType)
+- Validates cron schedules and timezones
+- Provides bulk operations (disable/enable/remove) for service cron jobs
+- Tracks job count and existence
+
+### 2. src/services/triggers/cron.test.ts
+Comprehensive test suite (418 lines) covering:
+- Cron job creation with metadata
+- Schedule validation (5-field and 6-field cron expressions)
+- Timezone validation (auto, valid zones, invalid zones)
+- Bulk operations (disable/enable/remove)
+- Job querying (getJobs, hasJobs, getJobCount)
+
+## Files Modified
+
+### 3. src/cron/types-shared.ts
+Added CronJobMetadata type:
+```typescript
+export type CronJobMetadata = {
+  serviceId?: string;
+  triggerId?: string;
+  triggerType?: "cron" | "webhook" | "message" | "event";
+  managedBy?: string;
+  [key: string]: unknown;
+};
+```
+
+Extended CronJobBase to include metadata field.
+
+### 4. src/cron/types.ts
+- Re-exported CronJobMetadata from types-shared.ts
+- Added CronListByServiceOptions type for filtering
+- Added CronBulkOperationOptions type for bulk operations
+- Added CronBulkOperationResult type for operation results
+
+### 5. src/cron/service.ts
+Added service-scoped cron operations:
+- `listByService(opts)` - List jobs filtered by serviceId
+- `disableByService(serviceId)` - Bulk disable service jobs
+- `enableByService(serviceId)` - Bulk enable service jobs
+- `removeByService(serviceId)` - Bulk remove service jobs
+
+### 6. src/cron/service/jobs.ts
+- Added metadata support in `createJob()` function
+- Added metadata patching in `applyJobPatch()` function
+
+### 7. src/services/lifecycle.ts
+Updated Service class to use ServiceCronTrigger:
+- Added ServiceCronTrigger to ServiceRuntimeRefs
+- Updated installCronTrigger() to use ServiceCronTrigger
+- Updated enable() to enable cron triggers
+- Updated disable() to disable cron triggers
+- Updated uninstall() to remove cron triggers
+
+## Integration Points
+
+### Service Installation
+When a Service installs with a cron trigger:
+1. ServiceCronTrigger.create() validates the schedule
+2. Creates CronJobCreate with service metadata
+3. Calls cronService.add() to create the job
+4. Stores trigger reference in ServiceRuntimeRefs
+
+### Service Enable/Disable
+When a Service is enabled/disabled:
+1. Service.enable() calls cronTrigger.enable()
+2. Service.disable() calls cronTrigger.disable()
+3. Bulk operations disable/enable all jobs with matching serviceId
+
+### Service Uninstall
+When a Service is uninstalled:
+1. Service.uninstall() calls cronTrigger.remove()
+2. Bulk removes all jobs with matching serviceId
+
+## Type Safety
+All changes are TypeScript-compatible. The metadata field flows through:
+- CronJobCreate (input) → createJob() → CronJob (stored)
+- CronJob (stored) → listByService() → filtered results
+
+## Verification
+- Type definitions are consistent across all files
+- ServiceCronTrigger properly integrates with existing CronService
+- Bulk operations use metadata.serviceId for filtering
+- Lifecycle methods properly delegate to ServiceCronTrigger
+
+## Date Completed
+2026-03-11

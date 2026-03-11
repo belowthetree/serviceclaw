@@ -1,0 +1,109 @@
+# Task 11: Error Handling & Rollback for Services - Implementation Evidence
+
+## Summary
+Implemented comprehensive error handling and rollback for Service operations in `src/services/errors.ts` with extensive test coverage in `src/services/errors.test.ts`.
+
+## Files Created
+
+### 1. src/services/errors.ts (1200+ lines)
+Comprehensive error handling module providing:
+
+#### Error Classes (10 specialized error types)
+- **ServiceError**: Base class with category, severity, context, cause, timestamp, code
+- **ServiceValidationError**: Validation failures with field-level details
+- **ServiceInstallationError**: Installation phase failures with progress tracking
+- **ServiceStateError**: Invalid state transitions with valid transition listing
+- **ServiceResourceError**: Resource management failures (cron, webhooks, subscriptions)
+- **ServiceRollbackError**: Rollback operation failures with detailed results
+- **ServiceCleanupError**: Cleanup verification failures with cleanup reports
+- **ServiceNetworkError**: Network failures with retry support
+- **ServicePermissionError**: Permission/access failures
+- **ServiceDependencyError**: Missing/incompatible dependencies
+- **ServiceRuntimeError**: Runtime execution failures with auto-disable support
+
+#### Error Categories (11 types)
+- validation, installation, runtime, state, resource, network, permission, dependency, rollback, cleanup, unknown
+
+#### Severity Levels (4 levels)
+- critical, error, warning, info
+
+#### Rollback Coordinator
+- Manages rollback actions with LIFO execution
+- Tracks executed/failed actions
+- Supports critical actions that stop rollback on failure
+- Provides status tracking
+
+#### Cleanup Verifier
+- Post-uninstall verification of resource cleanup
+- Supports cron, webhook, and subscription verification
+- Tracks verified/failed/orphaned resources
+- Generates cleanup reports
+
+#### Helper Functions
+- isRetryableError(): Determines if error can be retried
+- getRecoverySuggestions(): Actionable recovery steps per category
+- getUserFriendlyMessage(): Human-readable error messages
+- createServiceError(): Factory from unknown values
+- wrapServiceError(): Add context to existing errors
+- aggregateErrors(): Combine multiple errors
+
+### 2. src/services/errors.test.ts (1300+ lines)
+Comprehensive test suite with 60+ test cases covering:
+- All error classes construction and properties
+- Error serialization (toJSON)
+- Recovery suggestions
+- Retry logic
+- Rollback coordinator execution and failure handling
+- Cleanup verifier with all resource types
+- Edge cases (circular references, long messages, nested errors)
+- Integration scenarios (full rollback, cleanup verification)
+
+## Error Handling Requirements Met
+
+✅ Validation errors → validation_error state (handled by ServiceValidationError)
+✅ Install errors → install_error state + full rollback (handled by ServiceInstallationError + RollbackCoordinator)
+✅ Runtime errors → error state + auto-disable (handled by ServiceRuntimeError with autoDisable flag)
+✅ Clear error messages for all failure modes (ERROR_MESSAGES + getUserFriendlyMessage)
+
+## Rollback Requirements Met
+
+✅ Rollback on installation failure (RollbackCoordinator with LIFO execution)
+✅ Cleanup verification on uninstall (CleanupVerifier with resource checks)
+✅ No partial state on failure (all resources tracked and cleaned up)
+✅ Error handling for edge cases (partial failure, network errors, etc.)
+
+## Key Features
+
+1. **Comprehensive Error Context**: Each error includes serviceId, category, severity, timestamp, and optional context
+2. **Nested Error Support**: All errors support a `cause` chain for debugging
+3. **User-Friendly Messages**: Pre-defined messages for each error category
+4. **Recovery Suggestions**: Actionable steps for each error type
+5. **Rollback Coordination**: Automatic cleanup of created resources on failure
+6. **Cleanup Verification**: Post-uninstall verification to ensure no orphaned resources
+7. **Serialization Support**: All errors serialize to JSON for logging/persistence
+
+## Error State Mapping
+
+| Error Type | Category | Severity | State |
+|------------|----------|----------|-------|
+| ServiceValidationError | validation | warning | validation_error |
+| ServiceInstallationError | installation | error | install_error |
+| ServiceStateError | state | warning | (prevents transition) |
+| ServiceResourceError | resource | error | install_error |
+| ServiceRollbackError | rollback | critical | install_error |
+| ServiceCleanupError | cleanup | warning | - |
+| ServiceNetworkError | network | error | (retryable) |
+| ServicePermissionError | permission | error | - |
+| ServiceDependencyError | dependency | error | validation_error |
+| ServiceRuntimeError | runtime | error | error (auto-disable) |
+
+## Testing Status
+
+All error classes have unit tests covering:
+- Construction with all properties
+- Default value handling
+- Method behavior (isComplete, getStatus, etc.)
+- Error serialization
+- Integration scenarios
+
+Tests use Vitest with describe/it blocks and comprehensive assertions.

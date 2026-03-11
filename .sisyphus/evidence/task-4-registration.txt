@@ -1,0 +1,36 @@
+TASK 4 EVIDENCE: Register service handlers in Gateway
+========================================================
+
+Changes Made:
+-------------
+1. Added import statement (line 25):
+   import { servicesHandlers } from "./server-methods/services.js";
+
+2. Added handlers to coreGatewayHandlers object (line 95):
+   ...servicesHandlers,
+
+File Modified:
+--------------
+src/gateway/server-methods.ts
+
+Verification Results:
+--------------------
+✓ Import added successfully
+✓ Handlers registered in coreGatewayHandlers object
+✓ All 13 tests pass in src/gateway/server-methods/services.test.ts
+✓ Registration pattern matches existing handlers (health, agents, etc.)
+
+Test Output:
+------------
+✓ src/gateway/server-methods/services.test.ts (13 tests) 13ms
+
+Test Files  1 passed (1)
+     Tests  13 passed (13)
+
+Handlers Registered:
+--------------------
+- services.status
+- services.enable  
+- services.disable
+
+Status: COMPLETE

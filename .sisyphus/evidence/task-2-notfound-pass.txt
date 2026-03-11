@@ -1,0 +1,25 @@
+Task 2: Service Not Found Error - Test Results
+===============================================
+
+Scenario: Service not found error
+  Tool: pnpm test
+  Preconditions: Service doesn't exist
+  Steps:
+    1. Call services.enable with non-existent serviceId
+    2. Assert response.ok === false
+    3. Assert error code is NOT_FOUND
+  
+  Result: PASSED
+  
+  Verification:
+    ✓ Error code matches ErrorCodes.NOT_FOUND
+    ✓ Error message is "Service not found"
+    ✓ Response ok is false
+
+  Test Output (from services.enable):
+    ✓ returns NOT_FOUND error for non-existent service
+
+  Test Output (from services.disable):
+    ✓ returns NOT_FOUND error for non-existent service
+
+All not-found error tests passed successfully.

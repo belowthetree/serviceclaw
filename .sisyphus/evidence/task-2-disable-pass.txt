@@ -1,0 +1,21 @@
+Task 2: Disable Service - Test Results
+=======================================
+
+Scenario: Disable enabled service
+  Tool: pnpm test
+  Preconditions: Mock ServiceRegistry with service in "enabled" state
+  Steps:
+    1. Call services.disable handler with { serviceId: "svc-1" }
+    2. Assert response.ok === true
+    3. Assert registry.disable was called
+  
+  Result: PASSED
+  
+  Test Output:
+    ✓ disables an enabled service successfully
+    ✓ returns NOT_FOUND error for non-existent service
+    ✓ returns INVALID_STATE error for invalid state transition
+    ✓ returns INVALID_REQUEST for missing serviceId
+    ✓ returns INVALID_REQUEST for non-string serviceId
+
+All 5 tests for services.disable passed successfully.

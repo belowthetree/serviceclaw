@@ -1,0 +1,130 @@
+=== QA Scenario: Get services list successfully ===
+
+Tool: Bun test
+Preconditions: Mock ServiceRegistry with 2 services
+
+Test Results:
+
+> openclaw@2026.3.9 test /home/zgg/project/serviceclaw
+> node scripts/test-parallel.mjs src/gateway/server-methods/services.test.ts
+
+
+[1m[46m RUN [49m[22m [36mv4.0.18 [39m[90m/home/zgg/project/serviceclaw[39m
+
+ [32m✓[39m src/gateway/server-methods/services.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m3 passed[39m[22m[90m (3)[39m
+[2m   Start at [22m 23:30:07
+[2m   Duration [22m 786ms[2m (transform 351ms, setup 225ms, import 460ms, tests 7ms, environment 0ms)[22m
+
+
+=== File: services.ts ===
+import { ErrorCodes, errorShape } from "../protocol/index.js";
+import { getServiceRegistry } from "../../services/registry.js";
+import { formatForLog } from "../ws-log.js";
+import type { GatewayRequestHandlers } from "./types.js";
+
+export const servicesHandlers: GatewayRequestHandlers = {
+  "services.status": async ({ respond }) => {
+    try {
+      const registry = getServiceRegistry();
+      const services = await registry.list();
+
+      respond(true, { services }, undefined);
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, formatForLog(err)));
+    }
+  },
+};
+
+=== File: services.test.ts ===
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { servicesHandlers } from "./services.js";
+import type { GatewayRequestContext } from "./types.js";
+
+const mocks = vi.hoisted(() => ({
+  list: vi.fn(),
+}));
+
+vi.mock("../../services/registry.js", () => ({
+  getServiceRegistry: () => ({
+    list: mocks.list,
+  }),
+}));
+
+const makeContext = (): GatewayRequestContext =>
+  ({
+    dedupe: new Map(),
+  }) as unknown as GatewayRequestContext;
+
+async function runServicesStatus() {
+  const respond = vi.fn();
+  await servicesHandlers["services.status"]({
+    params: {},
+    respond,
+    context: makeContext(),
+    req: { type: "req", id: "1", method: "services.status" },
+    client: null,
+    isWebchatConnect: () => false,
+  });
+  return { respond };
+}
+
+describe("services.status", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns list of services on success", async () => {
+    const mockServices = [
+      {
+        id: "service-1",
+        name: "Test Service 1",
+        state: "enabled" as const,
+        triggerType: "cron" as const,
+        category: "automation",
+        updatedAt: "2025-01-01T00:00:00Z",
+      },
+      {
+        id: "service-2",
+        name: "Test Service 2",
+        state: "disabled" as const,
+        triggerType: "webhook" as const,
+        category: "integration",
+        updatedAt: "2025-01-02T00:00:00Z",
+      },
+    ];
+    mocks.list.mockResolvedValue(mockServices);
+
+    const { respond } = await runServicesStatus();
+
+    expect(mocks.list).toHaveBeenCalledTimes(1);
+    expect(respond).toHaveBeenCalledWith(true, { services: mockServices }, undefined);
+  });
+
+  it("returns empty array when no services", async () => {
+    mocks.list.mockResolvedValue([]);
+
+    const { respond } = await runServicesStatus();
+
+    expect(mocks.list).toHaveBeenCalledTimes(1);
+    expect(respond).toHaveBeenCalledWith(true, { services: [] }, undefined);
+  });
+
+  it("handles errors gracefully", async () => {
+    mocks.list.mockRejectedValue(new Error("Registry unavailable"));
+
+    const { respond } = await runServicesStatus();
+
+    expect(mocks.list).toHaveBeenCalledTimes(1);
+    expect(respond).toHaveBeenCalledWith(
+      false,
+      undefined,
+      expect.objectContaining({
+        code: "UNAVAILABLE",
+        message: expect.stringContaining("Registry unavailable"),
+      }),
+    );
+  });
+});

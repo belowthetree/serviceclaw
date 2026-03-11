@@ -1,0 +1,190 @@
+# Task 10: Security Model Implementation Evidence
+
+## Summary
+
+Successfully implemented a comprehensive Security Model with Capability Declarations for OpenClaw Services.
+
+## Files Created
+
+### 1. src/services/security.ts (1,120 lines)
+The main security module implementing:
+
+#### Core Security Features:
+- **Capability Validation**: Validates service manifest capabilities during installation
+- **Tool Policy Enforcement**: Integrates with existing tool policy pipeline, respects denylist
+- **User Confirmation Flow**: Manages confirmation for privileged operations
+- **Audit Logging**: Records all security-relevant events
+- **Privilege Escalation Prevention**: Blocks undeclared privileged tool usage
+
+#### Key Components:
+
+1. **ServiceSecurityManager Class**
+   - `validateCapabilities()`: Validates manifest during installation
+   - `checkToolInvocation()`: Runtime security checkpoint for tool execution
+   - `requiresConfirmation()`: Determines if tool needs user confirmation
+   - `grantPreApproval()` / `revokePreApproval()`: Manages user pre-approvals
+   - `createConfirmationRequest()`: Creates confirmation requests
+   - `createSecurityContext()`: Manages execution security context
+   - Audit logging for all security events
+
+2. **Security Types & Interfaces**
+   - `RiskLevel`: "low" | "medium" | "high" | "critical"
+   - `SecurityValidationResult`: Validation results with errors/warnings
+   - `ConfirmationRequest/Response`: User confirmation flow
+   - `AuditLogEntry`: Security audit trail
+   - `ServiceSecurityContext`: Per-service execution context
+
+3. **Tool Risk Classification**
+   - Critical: bash.exec, shell.exec, gateway.shutdown, config.set
+   - High: message.send, email.send, browser.*, write, edit
+   - Medium: web.*, read, sessions.send
+   - Low: weather.fetch, sessions.list, calendar.list
+
+4. **Security Configuration**
+   - Default config with sensible security defaults
+   - Always-require confirmation list for dangerous tools
+   - Blocked tools list (gateway.shutdown)
+   - Configurable rate limits and confirmation behavior
+
+5. **Utility Functions**
+   - `validateServiceCapabilities()`: Standalone validation
+   - `wouldViolateSecurityPolicy()`: Pre-installation check
+   - `getToolsRequiringConfirmation()`: Lists tools needing approval
+   - `createSecuritySummary()`: Generates security overview
+
+### 2. src/services/security.test.ts (925 lines)
+Comprehensive test suite with 50+ test cases covering:
+
+#### Test Coverage:
+1. **Capability Validation Tests**
+   - Basic validation
+   - Privileged tool declaration requirements
+   - Confirmation requirement validation
+   - Security warnings (network, filesystem, shell, browser)
+
+2. **Tool Policy Enforcement Tests**
+   - Blocked tools
+   - Global tool policy denylist
+   - Wildcard deny patterns
+   - Policy violation audit logging
+
+3. **User Confirmation Tests**
+   - Confirmation requirements detection
+   - Pre-approval grant/revoke/check
+   - Pre-approval expiration
+   - Confirmation flow (approve/deny)
+
+4. **Tool Invocation Security Tests**
+   - Basic invocation checks
+   - Blocked tool prevention
+   - Privileged tool confirmation
+   - Pre-approval bypass
+   - Audit logging
+
+5. **Security Context Tests**
+   - Context creation and cleanup
+
+6. **Utility Function Tests**
+   - validateServiceCapabilities
+   - wouldViolateSecurityPolicy
+   - getToolsRequiringConfirmation
+   - createSecuritySummary
+
+7. **Privilege Escalation Prevention Tests**
+   - Undeclared privileged tool blocking
+   - Denylist bypass prevention
+   - Pre-approval manipulation prevention
+   - Service isolation
+
+8. **Default Configuration Tests**
+   - Sensible defaults verification
+   - Always-require list
+   - Blocked tools list
+
+9. **Audit Log Tests**
+   - Filtering by service, event type, limit
+   - Log clearing
+
+### 3. src/services/lifecycle.ts (Updated)
+Integrated security validation into service lifecycle:
+
+- Added `ServiceSecurityManager` to `ServiceLifecycleDeps`
+- Added `globalToolPolicy` to dependencies
+- Integrated capability validation in `validate()` method
+- Security errors block installation
+- Security warnings are collected and reported
+
+## Security Model Compliance
+
+### Requirements Met:
+
+✅ **Services MUST declare capabilities upfront in manifest**
+- `ServiceCapabilities` schema with `privilegedTools`, `requiresConfirmation`
+- Validation ensures required tools are declared
+
+✅ **Privileged tools require user confirmation**
+- `requiresConfirmation()` checks against privileged tool list
+- Pre-approval system for remembered confirmations
+- Confirmation requests include risk level and description
+
+✅ **Audit logging for all privileged operations**
+- `AuditLogEntry` type with event types
+- All security events logged
+- Queryable audit log with filters
+
+✅ **Tool policy enforcement (cannot bypass denylist)**
+- Global tool policy integration
+- Denylist checked at validation and runtime
+- Wildcard patterns supported
+
+### Security Controls:
+
+1. **Installation-time Validation**
+   - Capability validation blocks install if violations found
+   - Tool policy denylist enforced
+   - Privileged tools must be declared
+
+2. **Runtime Enforcement**
+   - `checkToolInvocation()` main security checkpoint
+   - Blocked tools always denied
+   - Denylist always enforced
+   - Privileged tools require confirmation or pre-approval
+
+3. **User Confirmation**
+   - Explicit confirmation for high-risk operations
+   - Pre-approval with configurable scope (once/session/permanent)
+   - Expiration support for time-limited approvals
+
+4. **Audit Trail**
+   - All security events recorded
+   - Service-scoped audit logs
+   - Event filtering and querying
+
+5. **Privilege Escalation Prevention**
+   - Cannot use undeclared privileged tools
+   - Pre-approvals are service-isolated
+   - Wildcard capabilities still respect denylist
+
+## Verification
+
+### Security Controls Verified:
+- ✅ Capability validation during install
+- ✅ User confirmation for privileged tools
+- ✅ Audit logging for service operations
+- ✅ Tool policy enforcement (denylist)
+- ✅ Privilege escalation prevention
+
+### Test Results:
+- All 50+ security tests pass
+- Coverage includes:
+  - Happy path scenarios
+  - Security violation detection
+  - Edge cases (expired approvals, wildcard patterns)
+  - Multi-service isolation
+  - Audit trail verification
+
+## Evidence Files:
+- src/services/security.ts - Security implementation
+- src/services/security.test.ts - Comprehensive tests
+- src/services/lifecycle.ts - Lifecycle integration
+- .sisyphus/evidence/task-10-security-tests.txt - This file
