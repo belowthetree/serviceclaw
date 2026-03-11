@@ -87,7 +87,6 @@ import { renderInstances } from "./views/instances.ts";
 import { renderLogs } from "./views/logs.ts";
 import { renderNodes } from "./views/nodes.ts";
 import { renderOverview } from "./views/overview.ts";
-import { renderServicesStatus } from "./views/services-status.ts";
 import { renderServicesView } from "./views/services.ts";
 import { renderSessions } from "./views/sessions.ts";
 import { renderSkills } from "./views/skills.ts";
@@ -955,34 +954,22 @@ export function renderApp(state: AppViewState) {
 
         ${
           state.tab === "services"
-            ? html`
-                <div class="services-combined-view">
-                  ${renderServicesStatus({
-                    services: state.services,
-                    loading: state.servicesLoading,
-                    error: state.servicesError,
-                    onEnable: (serviceId) => state.enableService(serviceId),
-                    onDisable: (serviceId) => state.disableService(serviceId),
-                  })}
-                  <div class="services-divider"></div>
-                  ${renderServicesView({
-                    services: state.services,
-                    loading: state.servicesLoading,
-                    error: state.servicesError,
-                    onServiceEnable: (serviceId) => state.enableService(serviceId),
-                    onServiceDisable: (serviceId) => state.disableService(serviceId),
-                    onServiceConfigure: (serviceId) => {
-                      console.log("Configure service:", serviceId);
-                    },
-                    onServiceSubmit: (detail) => {
-                      console.log("Service submit:", detail);
-                    },
-                    onServiceCancel: () => {
-                      state.tab = "skills";
-                    },
-                  })}
-                </div>
-              `
+            ? renderServicesView({
+                services: state.services,
+                loading: state.servicesLoading,
+                error: state.servicesError,
+                onServiceEnable: (serviceId) => state.enableService(serviceId),
+                onServiceDisable: (serviceId) => state.disableService(serviceId),
+                onServiceConfigure: (serviceId) => {
+                  console.log("Configure service:", serviceId);
+                },
+                onServiceSubmit: (detail) => {
+                  console.log("Service submit:", detail);
+                },
+                onServiceCancel: () => {
+                  state.tab = "skills";
+                },
+              })
             : nothing
         }
 
