@@ -1,0 +1,36 @@
+Task 8: WebSocket Client Methods - Verification Evidence
+======================================================
+
+File Modified: ui/src/ui/gateway.ts
+
+Methods Added to GatewayBrowserClient class:
+
+1. getServicesStatus(): Promise<{ services: ServiceSummary[] }>
+   - Line: 459-466
+   - WebSocket method: "services.status"
+   - Returns: { services: ServiceSummary[] }
+
+2. enableService(serviceId: string): Promise<void>
+   - Line: 468-475
+   - WebSocket method: "services.enable"
+   - Params: { serviceId: string }
+   - Returns: void (throws on error)
+
+3. disableService(serviceId: string): Promise<void>
+   - Line: 477-484
+   - WebSocket method: "services.disable"
+   - Params: { serviceId: string }
+   - Returns: void (throws on error)
+
+TypeScript Verification:
+- Command: pnpm tsgo
+- Result: No type errors in ui/src/ui/gateway.ts
+- All methods properly typed with Promise return types
+- Uses existing request<T>() method internally
+- Proper error handling with boolean ok check
+
+Implementation Pattern:
+- All methods use this.request<T>() for WebSocket calls
+- Type-safe generic parameters
+- Consistent with existing GatewayBrowserClient methods
+- Error handling throws on non-ok responses

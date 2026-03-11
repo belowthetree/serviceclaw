@@ -405,7 +405,7 @@ Max Concurrent: 4 (Waves 1 & 2)
 
 ---
 
-- [ ] 5. Add ServiceStatus types to UI types
+- [x] 5. Add ServiceStatus types to UI types
 
   **What to do**:
   - Update `ui/src/ui/types.ts` (or create types file)
@@ -458,7 +458,7 @@ Max Concurrent: 4 (Waves 1 & 2)
 
 ---
 
-- [ ] 6. Create services-status controller
+- [x] 6. Create services-status controller
 
   **What to do**:
   - Create `ui/src/ui/controllers/services-status.ts`
@@ -517,7 +517,7 @@ Max Concurrent: 4 (Waves 1 & 2)
 
 ---
 
-- [ ] 7. Write controller unit tests
+- [x] 7. Write controller unit tests
 
   **What to do**:
   - Create comprehensive unit tests for services-status controller
@@ -572,7 +572,7 @@ Max Concurrent: 4 (Waves 1 & 2)
 
 ---
 
-- [ ] 8. Add WebSocket client methods
+- [x] 8. Add WebSocket client methods
 
   **What to do**:
   - Update `ui/src/ui/gateway.ts` (or create extension)

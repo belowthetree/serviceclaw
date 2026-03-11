@@ -625,3 +625,63 @@ export type LogEntry = {
   message?: string | null;
   meta?: Record<string, unknown> | null;
 };
+
+// =============================================================================
+// Service Status Types
+// =============================================================================
+
+/** Service lifecycle states - 11 possible states */
+export type ServiceState =
+  | "pending"
+  | "validating"
+  | "installing"
+  | "installed"
+  | "enabled"
+  | "disabled"
+  | "error"
+  | "validation_error"
+  | "install_error"
+  | "uninstalling";
+
+/** Service category */
+export type ServiceCategory =
+  | "productivity"
+  | "communication"
+  | "monitoring"
+  | "automation"
+  | "integration"
+  | "custom";
+
+/** Trigger type for services */
+export type TriggerType = "cron" | "webhook" | "message" | "web";
+
+/** Service summary - matches backend ServiceSummary */
+export type ServiceSummary = {
+  id: string;
+  name: string;
+  state: ServiceState;
+  triggerType: TriggerType;
+  category?: ServiceCategory;
+  updatedAt: string;
+};
+
+/** Service execution statistics */
+export type ServiceExecutionStats = {
+  totalRuns: number;
+  successfulRuns: number;
+  failedRuns: number;
+  lastError?: string | null;
+};
+
+/** Service with execution stats */
+export type ServiceWithStats = ServiceSummary & {
+  stats?: ServiceExecutionStats;
+};
+
+/** Services status state - follows SkillsState pattern */
+export type ServicesStatusState = {
+  loading: boolean;
+  services: ServiceWithStats[];
+  error: string | null;
+  selectedServiceId: string | null;
+};

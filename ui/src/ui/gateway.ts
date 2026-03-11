@@ -456,6 +456,28 @@ export class GatewayBrowserClient {
     return p;
   }
 
+  async getServicesStatus(): Promise<{ services: import("./types.js").ServiceSummary[] }> {
+    return this.request<{ services: import("./types.js").ServiceSummary[] }>("services.status", {});
+  }
+
+  async enableService(serviceId: string): Promise<void> {
+    const result = await this.request<{ ok: boolean }>("services.enable", {
+      serviceId,
+    });
+    if (!result.ok) {
+      throw new Error(`Failed to enable service: ${serviceId}`);
+    }
+  }
+
+  async disableService(serviceId: string): Promise<void> {
+    const result = await this.request<{ ok: boolean }>("services.disable", {
+      serviceId,
+    });
+    if (!result.ok) {
+      throw new Error(`Failed to disable service: ${serviceId}`);
+    }
+  }
+
   private queueConnect() {
     this.connectNonce = null;
     this.connectSent = false;

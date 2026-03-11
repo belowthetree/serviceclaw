@@ -1,0 +1,51 @@
+Task 5: Add ServiceStatus types to UI types
+================================================
+
+Date: Wed Mar 11 2026
+Status: COMPLETED
+
+Types Added to ui/src/ui/types.ts:
+-----------------------------------
+
+1. ServiceState (11 possible states):
+   - "pending" | "validating" | "installing" | "installed"
+   - "enabled" | "disabled" | "error"
+   - "validation_error" | "install_error" | "uninstalling"
+
+2. ServiceCategory:
+   - "productivity" | "communication" | "monitoring"
+   - "automation" | "integration" | "custom"
+
+3. TriggerType:
+   - "cron" | "webhook" | "message" | "web"
+
+4. ServiceSummary:
+   - id: string
+   - name: string
+   - state: ServiceState
+   - triggerType: TriggerType
+   - category?: ServiceCategory
+   - updatedAt: string
+
+5. ServiceExecutionStats:
+   - totalRuns: number
+   - successfulRuns: number
+   - failedRuns: number
+   - lastError?: string | null
+
+6. ServiceWithStats:
+   - ServiceSummary + stats?: ServiceExecutionStats
+
+7. ServicesStatusState (follows SkillsState pattern):
+   - loading: boolean
+   - services: ServiceWithStats[]
+   - error: string | null
+   - selectedServiceId: string | null
+
+Verification:
+-------------
+✓ pnpm tsgo passes (no errors in ui/src/ui/types.ts)
+✓ Types match backend schema from src/gateway/protocol/schema/services.ts
+✓ Follows existing type patterns in codebase
+✓ All types are exported
+✓ No 'any' types used
