@@ -271,6 +271,18 @@
   padding: 6px 12px;
 }
 
+.services-combined-view {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.services-divider {
+  height: 1px;
+  background: var(--border-default, #3f3f46);
+  margin: 0 -24px;
+}
+
 /* Service Config View Styles */
 .services-view {
   padding: 24px;

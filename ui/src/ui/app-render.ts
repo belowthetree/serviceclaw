@@ -954,31 +954,29 @@ export function renderApp(state: AppViewState) {
         }
 
         ${
-          state.tab === "service-config"
-            ? renderServicesView({
-                loading: state.servicesLoading,
-                error: state.servicesError,
-                onServiceSubmit: (detail) => {
-                  // TODO: Implement service installation
-                  console.log("Service submit:", detail);
-                },
-                onServiceCancel: () => {
-                  // Navigate back to skills tab
-                  state.tab = "skills";
-                },
-              })
-            : nothing
-        }
-
-        ${
-          state.tab === "service-status"
-            ? renderServicesStatus({
-                services: state.services,
-                loading: state.servicesLoading,
-                error: state.servicesError,
-                onEnable: (serviceId) => state.enableService(serviceId),
-                onDisable: (serviceId) => state.disableService(serviceId),
-              })
+          state.tab === "services"
+            ? html`
+                <div class="services-combined-view">
+                  ${renderServicesStatus({
+                    services: state.services,
+                    loading: state.servicesLoading,
+                    error: state.servicesError,
+                    onEnable: (serviceId) => state.enableService(serviceId),
+                    onDisable: (serviceId) => state.disableService(serviceId),
+                  })}
+                  <div class="services-divider"></div>
+                  ${renderServicesView({
+                    loading: state.servicesLoading,
+                    error: state.servicesError,
+                    onServiceSubmit: (detail) => {
+                      console.log("Service submit:", detail);
+                    },
+                    onServiceCancel: () => {
+                      state.tab = "skills";
+                    },
+                  })}
+                </div>
+              `
             : nothing
         }
 

@@ -7,7 +7,7 @@ export const TAB_GROUPS = [
     label: "control",
     tabs: ["overview", "channels", "instances", "sessions", "usage", "cron"],
   },
-  { label: "agent", tabs: ["agents", "skills", "nodes", "service-config", "service-status"] },
+  { label: "agent", tabs: ["agents", "skills", "nodes", "services"] },
   { label: "settings", tabs: ["config", "debug", "logs"] },
 ] as const;
 
@@ -21,8 +21,7 @@ export type Tab =
   | "cron"
   | "skills"
   | "nodes"
-  | "service-config"
-  | "service-status"
+  | "services"
   | "chat"
   | "config"
   | "debug"
@@ -38,8 +37,7 @@ const TAB_PATHS: Record<Tab, string> = {
   cron: "/cron",
   skills: "/skills",
   nodes: "/nodes",
-  "service-config": "/service-config",
-  "service-status": "/service-status",
+  services: "/services",
   chat: "/chat",
   config: "/config",
   debug: "/debug",
@@ -149,10 +147,8 @@ export function iconForTab(tab: Tab): IconName {
       return "zap";
     case "nodes":
       return "monitor";
-    case "service-config":
+    case "services":
       return "settings";
-    case "service-status":
-      return "radio";
     case "config":
       return "settings";
     case "debug":
