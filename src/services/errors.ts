@@ -764,7 +764,7 @@ const RETRYABLE_CATEGORIES: ServiceErrorCategory[] = ["network", "resource"];
 export function isRetryableError(error: ServiceError): boolean {
   // Network errors are generally retryable
   if (error.category === "network") {
-    return (error as ServiceNetworkError).retryable;
+    return (error as ServiceNetworkError).retryable ?? true;
   }
 
   // Resource creation errors may be retryable
@@ -1096,7 +1096,8 @@ export class CleanupVerifier {
         const message = error instanceof Error ? error.message : String(error);
 
         // Check if this is a "not found" error (resource already cleaned)
-        if (message.includes("not found") || message.includes("ENOENT")) {
+        const lowerMessage = message.toLowerCase();
+        if (lowerMessage.includes("not found") || message.includes("ENOENT")) {
           orphaned.push(verification.resourceId);
         } else {
           failed.push({

@@ -270,3 +270,62 @@
   color: var(--text-tertiary, #71717a);
   padding: 6px 12px;
 }
+
+/* Service Config View Styles */
+.services-view {
+  padding: 24px;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.services-header {
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-default, #3f3f46);
+}
+
+.services-header__title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-primary, #e4e4e7);
+  margin: 0 0 8px 0;
+}
+
+.services-header__title svg {
+  width: 28px;
+  height: 28px;
+  color: var(--accent-primary, #10b981);
+}
+
+.services-header__description {
+  font-size: 14px;
+  color: var(--text-secondary, #a1a1aa);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.services-error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: var(--accent-error-bg, rgba(239, 68, 68, 0.1));
+  border: 1px solid var(--accent-error, #ef4444);
+  border-radius: 8px;
+  margin-bottom: 24px;
+}
+
+.services-error__icon {
+  width: 20px;
+  height: 20px;
+  color: var(--accent-error, #ef4444);
+  flex-shrink: 0;
+}
+
+.services-error__message {
+  font-size: 14px;
+  color: var(--accent-error, #ef4444);
+}

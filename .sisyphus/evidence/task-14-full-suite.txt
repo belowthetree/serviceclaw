@@ -1,28 +1,344 @@
 
 > openclaw@2026.3.9 test /home/zgg/project/serviceclaw
-> node scripts/test-parallel.mjs src/gateway/server-methods/services.test.ts
+> node scripts/test-parallel.mjs
 
 
 [1m[46m RUN [49m[22m [36mv4.0.18 [39m[90m/home/zgg/project/serviceclaw[39m
 
- [32m✓[39m src/gateway/server-methods/services.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 10[2mms[22m[39m
-
-[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
-[2m      Tests [22m [1m[32m13 passed[39m[22m[90m (13)[39m
-[2m   Start at [22m 00:08:29
-[2m   Duration [22m 819ms[2m (transform 392ms, setup 269ms, import 443ms, tests 10ms, environment 0ms)[22m
-
-
-> openclaw@2026.3.9 test /home/zgg/project/serviceclaw
-> node scripts/test-parallel.mjs ui/src/ui/controllers/services-status.test.ts
-
 
 [1m[46m RUN [49m[22m [36mv4.0.18 [39m[90m/home/zgg/project/serviceclaw[39m
 
- [32m✓[39m ui/src/ui/controllers/services-status.test.ts [2m([22m[2m33 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m src/memory/qmd-manager.test.ts [2m([22m[2m57 tests[22m[2m)[22m[32m 111[2mms[22m[39m
+ [32m✓[39m src/secrets/runtime.test.ts [2m([22m[2m58 tests[22m[2m)[22m[32m 82[2mms[22m[39m
+ [32m✓[39m src/services/registry.test.ts [2m([22m[2m64 tests[22m[2m)[22m[32m 197[2mms[22m[39m
+ [31m❯[39m src/services/integration.test.ts [2m([22m[2m44 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 87[2mms[22m[39m
+       [32m✓[39m should complete full lifecycle: install → enable → disable → uninstall[32m 6[2mms[22m[39m
+       [32m✓[39m should validate configuration correctly[32m 1[2mms[22m[39m
+       [32m✓[39m should fail validation with missing required fields[32m 1[2mms[22m[39m
+       [32m✓[39m should fail validation with invalid enum value[32m 1[2mms[22m[39m
+       [32m✓[39m should create cron job with correct schedule[32m 1[2mms[22m[39m
+[31m       [31m×[31m should track execution statistics[39m[32m 6[2mms[22m[39m
+       [32m✓[39m should complete full lifecycle: install → enable → trigger simulation → uninstall[32m 2[2mms[22m[39m
+       [32m✓[39m should register webhook with correct path pattern[32m 1[2mms[22m[39m
+       [32m✓[39m should provide callable unregister function[32m 1[2mms[22m[39m
+       [32m✓[39m should validate webhook configuration[32m 1[2mms[22m[39m
+       [32m✓[39m should complete full lifecycle: install → enable → message simulation → uninstall[32m 1[2mms[22m[39m
+       [32m✓[39m should create message subscriptions for each channel[32m 1[2mms[22m[39m
+       [32m✓[39m should validate message trigger configuration[32m 1[2mms[22m[39m
+       [32m✓[39m should require at least one channel for message trigger[32m 1[2mms[22m[39m
+       [32m✓[39m should complete full lifecycle: install → enable → disable → uninstall[32m 1[2mms[22m[39m
+       [32m✓[39m should validate dashboard configuration[32m 1[2mms[22m[39m
+       [32m✓[39m should accept various widget configurations[32m 1[2mms[22m[39m
+       [32m✓[39m should handle invalid manifest - missing required fields[32m 1[2mms[22m[39m
+       [32m✓[39m should handle invalid manifest - invalid version format[32m 1[2mms[22m[39m
+       [32m✓[39m should handle missing required config fields[32m 1[2mms[22m[39m
+       [32m✓[39m should handle wrong config types[32m 1[2mms[22m[39m
+       [32m✓[39m should rollback on installation failure[32m 1[2mms[22m[39m
+       [32m✓[39m should reject invalid state transitions[32m 1[2mms[22m[39m
+       [32m✓[39m should handle cron service errors gracefully[32m 1[2mms[22m[39m
+       [32m✓[39m should handle concurrent service installations[32m 1[2mms[22m[39m
+       [32m✓[39m should handle concurrent enable/disable operations on different services[32m 1[2mms[22m[39m
+       [32m✓[39m should handle sequential registry operations[32m 13[2mms[22m[39m
+       [32m✓[39m should prevent duplicate service registration[32m 4[2mms[22m[39m
+       [32m✓[39m should persist service state to disk[32m 5[2mms[22m[39m
+       [32m✓[39m should persist configuration changes[32m 3[2mms[22m[39m
+       [32m✓[39m should persist runtime references[32m 3[2mms[22m[39m
+       [32m✓[39m should persist execution statistics[32m 4[2mms[22m[39m
+       [32m✓[39m should recover registry index after restart[32m 6[2mms[22m[39m
+       [32m✓[39m should maintain state history across restarts[32m 5[2mms[22m[39m
+       [32m✓[39m should validate security capabilities for Daily Briefing[32m 1[2mms[22m[39m
+       [32m✓[39m should detect missing privileged tool declarations[32m 1[2mms[22m[39m
+       [32m✓[39m should install service using Service class directly[32m 1[2mms[22m[39m
+       [32m✓[39m should handle empty configuration objects with defaults[32m 1[2mms[22m[39m
+       [32m✓[39m should handle config with only default values[32m 1[2mms[22m[39m
+       [32m✓[39m should handle very long webhook paths[32m 1[2mms[22m[39m
+       [32m✓[39m should handle special characters in config strings[32m 1[2mms[22m[39m
+       [32m✓[39m should handle uninstalling service from installed state[32m 1[2mms[22m[39m
+       [32m✓[39m should handle updating config multiple times[32m 1[2mms[22m[39m
+       [32m✓[39m should pass all lifecycle tests for all 4 example services[32m 2[2mms[22m[39m
+ [32m✓[39m src/slack/monitor/events/interactions.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 24[2mms[22m[39m
+ [32m✓[39m src/config/redact-snapshot.test.ts [2m([22m[2m40 tests[22m[2m)[22m[32m 54[2mms[22m[39m
+ [32m✓[39m src/infra/heartbeat-runner.returns-default-unset.test.ts [2m([22m[2m25 tests[22m[2m)[22m[32m 74[2mms[22m[39m
+ [32m✓[39m src/cron/service.issue-regressions.test.ts [2m([22m[2m38 tests[22m[2m)[22m[32m 262[2mms[22m[39m
+ [32m✓[39m src/services/lifecycle.test.ts [2m([22m[2m53 tests[22m[2m)[22m[32m 49[2mms[22m[39m
+ [32m✓[39m src/services/security-audit.test.ts [2m([22m[2m61 tests[22m[2m)[22m[32m 32[2mms[22m[39m
+ [32m✓[39m src/services/security.test.ts [2m([22m[2m60 tests[22m[2m)[22m[32m 30[2mms[22m[39m
+ [32m✓[39m src/services/performance.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 37[2mms[22m[39m
+ [32m✓[39m src/services/errors.test.ts [2m([22m[2m80 tests[22m[2m)[22m[32m 31[2mms[22m[39m
+ [32m✓[39m src/acp/control-plane/manager.test.ts [2m([22m[2m25 tests[22m[2m)[22m[32m 120[2mms[22m[39m
+ [32m✓[39m src/node-host/invoke-system-run.test.ts [2m([22m[2m29 tests[22m[2m)[22m[32m 50[2mms[22m[39m
+ [32m✓[39m src/infra/outbound/outbound.test.ts [2m([22m[2m64 tests[22m[2m)[22m[32m 56[2mms[22m[39m
+ [32m✓[39m src/plugins/loader.test.ts [2m([22m[2m44 tests[22m[2m)[22m[33m 4108[2mms[22m[39m
+     [33m[2m✓[22m[39m supports legacy plugins importing monolithic plugin-sdk root [33m 3978[2mms[22m[39m
+ [32m✓[39m src/infra/outbound/deliver.test.ts [2m([22m[2m40 tests[22m[2m)[22m[32m 41[2mms[22m[39m
+ [32m✓[39m src/channels/plugins/actions/actions.test.ts [2m([22m[2m44 tests[22m[2m)[22m[32m 32[2mms[22m[39m
+ [32m✓[39m src/channels/plugins/onboarding/helpers.test.ts [2m([22m[2m59 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+ [32m✓[39m src/slack/monitor/slash.test.ts [2m([22m[2m27 tests[22m[2m)[22m[33m 1395[2mms[22m[39m
+     [33m[2m✓[22m[39m dispatches the command when a menu button is clicked [33m 1266[2mms[22m[39m
+ [32m✓[39m src/media-understanding/apply.test.ts [2m([22m[2m32 tests[22m[2m)[22m[32m 96[2mms[22m[39m
+ [32m✓[39m src/infra/restart-stale-pids.test.ts [2m([22m[2m37 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m src/config/schema.test.ts [2m([22m[2m20 tests[22m[2m)[22m[33m 972[2mms[22m[39m
+ [32m✓[39m src/infra/exec-approvals.test.ts [2m([22m[2m41 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+ [32m✓[39m src/plugins/install.test.ts [2m([22m[2m22 tests[22m[2m)[22m[33m 598[2mms[22m[39m
+ [32m✓[39m src/config/schema.help.quality.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 38[2mms[22m[39m
+ [32m✓[39m src/daemon/systemd.test.ts [2m([22m[2m43 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m src/infra/outbound/message-action-runner.test.ts [2m([22m[2m40 tests[22m[2m)[22m[32m 77[2mms[22m[39m
+ [32m✓[39m src/acp/translator.session-rate-limit.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+ [32m✓[39m src/security/audit.test.ts [2m([22m[2m95 tests[22m[2m)[22m[32m 215[2mms[22m[39m
+ [32m✓[39m src/config/sessions.test.ts [2m([22m[2m37 tests[22m[2m)[22m[32m 41[2mms[22m[39m
+ [32m✓[39m src/routing/resolve-route.test.ts [2m([22m[2m41 tests[22m[2m)[22m[32m 85[2mms[22m[39m
+ [32m✓[39m src/hooks/install.test.ts [2m([22m[2m15 tests[22m[2m)[22m[33m 361[2mms[22m[39m
+ [32m✓[39m src/security/temp-path-guard.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 156[2mms[22m[39m
+ [32m✓[39m src/cron/service.runs-one-shot-main-job-disables-it.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 62[2mms[22m[39m
+ [32m✓[39m src/media/store.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 140[2mms[22m[39m
+ [32m✓[39m src/acp/client.test.ts [2m([22m[2m42 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m src/infra/git-commit.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 95[2mms[22m[39m
+ [32m✓[39m src/config/config.legacy-config-detection.rejects-routing-allowfrom.test.ts [2m([22m[2m28 tests[22m[2m)[22m[32m 53[2mms[22m[39m
+ [32m✓[39m src/slack/monitor/media.test.ts [2m([22m[2m28 tests[22m[2m)[22m[32m 113[2mms[22m[39m
+ [32m✓[39m src/config/includes.test.ts [2m([22m[2m26 tests[22m[2m)[22m[32m 26[2mms[22m[39m
+ [32m✓[39m src/infra/archive.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 86[2mms[22m[39m
+ [32m✓[39m src/security/windows-acl.test.ts [2m([22m[2m48 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m test/scripts/ios-team-id.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 45[2mms[22m[39m
+ [32m✓[39m src/cli/program.smoke.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 48[2mms[22m[39m
+ [32m✓[39m src/memory/embeddings.test.ts [2m([22m[2m23 tests[22m[2m)[22m[33m 643[2mms[22m[39m
+ [32m✓[39m src/slack/monitor/message-handler/prepare.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 79[2mms[22m[39m
+ [32m✓[39m src/security/fix.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 44[2mms[22m[39m
+ [32m✓[39m src/tts/tts.test.ts [2m([22m[2m29 tests[22m[2m)[22m[32m 18[2mms[22m[39m
+ [32m✓[39m src/cli/cron-cli.test.ts [2m([22m[2m35 tests[22m[2m)[22m[32m 38[2mms[22m[39m
+ [32m✓[39m src/cli/command-secret-gateway.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m src/cli/daemon-cli.coverage.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 30[2mms[22m[39m
+ [32m✓[39m src/infra/update-runner.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 31[2mms[22m[39m
+ [32m✓[39m test/git-hooks-pre-commit.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 26[2mms[22m[39m
+ [32m✓[39m src/channels/plugins/plugins-core.test.ts [2m([22m[2m35 tests[22m[2m)[22m[32m 40[2mms[22m[39m
+ [32m✓[39m src/process/supervisor/supervisor.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 53[2mms[22m[39m
+ [32m✓[39m src/services/schema.test.ts [2m([22m[2m39 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m src/cli/update-cli.test.ts [2m([22m[2m26 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m src/hooks/bundled/session-memory/handler.test.ts [2m([22m[2m17 tests[22m[2m)[22m[33m 405[2mms[22m[39m
+ [32m✓[39m src/utils.test.ts [2m([22m[2m28 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m src/slack/monitor.tool-result.test.ts [2m([22m[2m25 tests[22m[2m)[22m[32m 130[2mms[22m[39m
+ [32m✓[39m src/plugins/tools.optional.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/imessage/monitor.shutdown.unhandled-rejection.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 5[2mms[22m[39m
 
-[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
-[2m      Tests [22m [1m[32m33 passed[39m[22m[90m (33)[39m
-[2m   Start at [22m 00:08:31
-[2m   Duration [22m 372ms[2m (transform 213ms, setup 245ms, import 16ms, tests 13ms, environment 0ms)[22m
+[2m Test Files [22m [1m[32m19 passed[39m[22m[90m (19)[39m
+[2m      Tests [22m [1m[32m342 passed[39m[22m[90m (342)[39m
+[2m   Start at [22m 00:32:12
+[2m   Duration [22m 28.46s[2m (transform 7.38s, setup 1.05s, import 17.79s, tests 7.82s, environment 2ms)[22m
 
+ [32m✓[39m src/secrets/apply.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 78[2mms[22m[39m
+ [32m✓[39m src/cron/service.jobs.test.ts [2m([22m[2m34 tests[22m[2m)[22m[32m 26[2mms[22m[39m
+ [32m✓[39m src/context-engine/context-engine.test.ts [2m([22m[2m24 tests[22m[2m)[22m[33m 2736[2mms[22m[39m
+     [33m[2m✓[22m[39m plugin-sdk export path shares the same global registry [33m 2693[2mms[22m[39m
+ [32m✓[39m src/secrets/audit.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 127[2mms[22m[39m
+ [32m✓[39m ui/src/ui/controllers/services-status.test.ts [2m([22m[2m33 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m src/config/io.write-config.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 68[2mms[22m[39m
+ [32m✓[39m src/infra/outbound/targets.test.ts [2m([22m[2m47 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m src/acp/persistent-bindings.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m src/cron/isolated-agent.uses-last-non-empty-agent-text-as.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 69[2mms[22m[39m
+ [32m✓[39m src/daemon/service-env.test.ts [2m([22m[2m48 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m src/cli/memory-cli.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 56[2mms[22m[39m
+ [32m✓[39m ui/src/ui/controllers/chat.test.ts [2m([22m[2m25 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m src/infra/fs-safe.test.ts [2m([22m[2m27 tests[22m[2m)[22m[32m 170[2mms[22m[39m
+ [32m✓[39m src/cron/isolated-agent/subagent-followup.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m src/cron/isolated-agent.model-formatting.test.ts [2m([22m[2m22 tests[22m[2m)[22m[32m 72[2mms[22m[39m
+ [32m✓[39m src/signal/format.chunking.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 28[2mms[22m[39m
+ [32m✓[39m src/security/dm-policy-shared.test.ts [2m([22m[2m66 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m src/pairing/pairing-store.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 52[2mms[22m[39m
+ [32m✓[39m src/cron/normalize.test.ts [2m([22m[2m27 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/daemon/launchd.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m src/cli/config-cli.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 97[2mms[22m[39m
+ [32m✓[39m src/hooks/internal-hooks.test.ts [2m([22m[2m30 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m src/tui/tui-event-handlers.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m src/channels/status-reactions.test.ts [2m([22m[2m35 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m src/cron/isolated-agent.skips-delivery-without-whatsapp-recipient-besteffortdeliver-true.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 96[2mms[22m[39m
+ [32m✓[39m src/cli/gateway-cli/run-loop.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 29[2mms[22m[39m
+ [32m✓[39m src/config/config.legacy-config-detection.accepts-imessage-dmpolicy.test.ts [2m([22m[2m30 tests[22m[2m)[22m[32m 55[2mms[22m[39m
+ [32m✓[39m src/memory/index.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 58[2mms[22m[39m
+ [32m✓[39m src/wizard/onboarding.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 67[2mms[22m[39m
+ [32m✓[39m src/cli/qr-cli.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+ [32m✓[39m src/infra/exec-approvals-safe-bins.test.ts [2m([22m[2m47 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m src/security/external-content.test.ts [2m([22m[2m38 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m src/infra/provider-usage.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+ [32m✓[39m src/secrets/runtime-web-tools.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m src/cron/service.restart-catchup.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 46[2mms[22m[39m
+ [32m✓[39m src/signal/monitor.tool-result.sends-tool-summaries-responseprefix.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 46[2mms[22m[39m
+ [32m✓[39m src/plugins/uninstall.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m src/services/triggers/cron.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 27[2mms[22m[39m
+ [32m✓[39m src/secrets/resolve.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 90[2mms[22m[39m
+ [32m✓[39m src/infra/session-cost-usage.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 34[2mms[22m[39m
+ [32m✓[39m src/plugins/discovery.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+ [32m✓[39m src/infra/exec-approvals-allow-always.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m src/infra/provider-usage.auth.normalizes-keys.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 43[2mms[22m[39m
+ [32m✓[39m src/security/skill-scanner.test.ts [2m([22m[2m27 tests[22m[2m)[22m[32m 24[2mms[22m[39m
+ [32m✓[39m src/slack/monitor/monitor.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 67[2mms[22m[39m
+ [32m✓[39m src/infra/exec-approval-forwarder.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+ [32m✓[39m src/cli/update-cli/restart-helper.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m src/config/sessions/store.pruning.integration.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 39[2mms[22m[39m
+ [32m✓[39m src/config/sessions/sessions.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 34[2mms[22m[39m
+ [32m✓[39m src/config/env-substitution.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m src/infra/update-startup.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 43[2mms[22m[39m
+ [32m✓[39m src/node-host/invoke-system-run-plan.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m src/memory/mmr.test.ts [2m([22m[2m25 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [31m❯[39m src/cli/service.test.ts [2m([22m[2m27 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[32m 45[2mms[22m[39m
+       [32m✓[39m should format enabled state with success color[32m 2[2mms[22m[39m
+       [32m✓[39m should format disabled state with warning color[32m 0[2mms[22m[39m
+       [32m✓[39m should format error states with error color[32m 0[2mms[22m[39m
+       [32m✓[39m should format transitional states with accent color[32m 0[2mms[22m[39m
+       [32m✓[39m should format ISO date strings[32m 12[2mms[22m[39m
+       [32m✓[39m should return 'never' for undefined dates[32m 0[2mms[22m[39m
+       [32m✓[39m should parse JSON config[32m 1[2mms[22m[39m
+       [32m✓[39m should parse key=value pairs[32m 0[2mms[22m[39m
+       [32m✓[39m should parse numbers correctly[32m 0[2mms[22m[39m
+       [32m✓[39m should return empty object for undefined input[32m 0[2mms[22m[39m
+       [32m✓[39m should detect SSH git URLs[32m 0[2mms[22m[39m
+       [32m✓[39m should detect HTTPS git URLs[32m 0[2mms[22m[39m
+       [32m✓[39m should detect git+https URLs[32m 0[2mms[22m[39m
+       [32m✓[39m should detect GitHub shorthand[32m 0[2mms[22m[39m
+       [32m✓[39m should not match local paths[32m 0[2mms[22m[39m
+       [32m✓[39m should load valid service.json[32m 2[2mms[22m[39m
+       [32m✓[39m should return null for non-existent files[32m 0[2mms[22m[39m
+       [32m✓[39m should return null for invalid manifests[32m 0[2mms[22m[39m
+       [32m✓[39m should support JSON5 syntax[32m 2[2mms[22m[39m
+       [32m✓[39m should have 'service' command[32m 2[2mms[22m[39m
+       [32m✓[39m should have all 7 subcommands[32m 1[2mms[22m[39m
+       [32m✓[39m should install a service from local path[32m 3[2mms[22m[39m
+[31m       [31m×[31m should enable and disable a service[39m[32m 6[2mms[22m[39m
+[31m       [31m×[31m should track state history[39m[32m 2[2mms[22m[39m
+       [32m✓[39m should remove a service[32m 2[2mms[22m[39m
+       [32m✓[39m should list services with filtering[32m 2[2mms[22m[39m
+       [32m✓[39m should provide registry statistics[32m 2[2mms[22m[39m
+ [32m✓[39m src/cli/argv.test.ts [2m([22m[2m51 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/infra/heartbeat-runner.respects-ackmaxchars-heartbeat-acks.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 62[2mms[22m[39m
+ [32m✓[39m src/tui/gateway-chat.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 91[2mms[22m[39m
+ [32m✓[39m src/cron/isolated-agent/delivery-dispatch.double-announce.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 18[2mms[22m[39m
+ [32m✓[39m src/cron/isolated-agent/run.skill-filter.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m src/media-understanding/apply.echo-transcript.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 40[2mms[22m[39m
+ [32m✓[39m src/cli/daemon-cli/lifecycle.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 65[2mms[22m[39m
+ [32m✓[39m src/config/legacy-migrate.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 25[2mms[22m[39m
+ [32m✓[39m src/infra/heartbeat-wake.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m src/pairing/setup-code.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m src/memory/manager.batch.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 64[2mms[22m[39m
+ [32m✓[39m src/plugin-sdk/webhook-targets.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m src/config/config-misc.test.ts [2m([22m[2m32 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+ [32m✓[39m src/config/config.plugin-validation.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 147[2mms[22m[39m
+ [32m✓[39m src/tui/theme/theme.test.ts [2m([22m[2m25 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m src/hooks/loader.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 41[2mms[22m[39m
+ [32m✓[39m src/infra/infra-runtime.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+ [32m✓[39m src/config/plugin-auto-enable.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+ [32m✓[39m src/cron/isolated-agent/delivery-target.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m src/canvas-host/server.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 84[2mms[22m[39m
+ [32m✓[39m src/cli/daemon-cli/install.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/infra/bonjour.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m src/tui/components/searchable-select-list.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m src/infra/install-package-dir.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 25[2mms[22m[39m
+ [32m✓[39m src/infra/control-ui-assets.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m src/cli/daemon-cli/status.gather.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m src/infra/system-run-command.test.ts [2m([22m[2m26 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m src/cron/run-log.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+ [32m✓[39m src/signal/monitor/event-handler.mention-gating.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 31[2mms[22m[39m
+ [32m✓[39m src/cli/program.force.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m src/memory/search-manager.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m src/daemon/schtasks.test.ts [2m([22m[2m22 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m src/cli/devices-cli.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 39[2mms[22m[39m
+ [32m✓[39m src/process/command-queue.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 61[2mms[22m[39m
+ [32m✓[39m src/infra/outbound/message.channels.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m src/plugins/wired-hooks-compaction.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/channels/typing.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m src/cron/isolated-agent/session.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m src/media/input-files.fetch-guard.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 37[2mms[22m[39m
+ [32m✓[39m src/infra/shell-env.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m src/infra/bonjour-discovery.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m src/infra/npm-pack-install.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m src/cli/gateway-cli/run.option-collisions.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 63[2mms[22m[39m
+ [32m✓[39m src/infra/exec-approvals-config.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m src/imessage/monitor.gating.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m src/infra/tmp-openclaw-dir.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m src/cron/isolated-agent/run.cron-model-override.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m src/acp/translator.cancel-scoping.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m src/config/config.nix-integration-u3-u5-u9.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 61[2mms[22m[39m
+ [32m✓[39m src/memory/internal.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m src/hooks/message-hooks.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m src/config/config.sandbox-docker.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m src/infra/heartbeat-runner.scheduler.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m src/infra/install-source-utils.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 18[2mms[22m[39m
+ [32m✓[39m src/channels/plugins/group-policy-warnings.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m src/channels/plugins/onboarding/whatsapp.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m src/infra/device-pairing.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 27[2mms[22m[39m
+ [32m✓[39m src/cron/service.read-ops-nonblocking.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 27[2mms[22m[39m
+ [32m✓[39m src/infra/gateway-lock.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 98[2mms[22m[39m
+ [32m✓[39m src/wizard/onboarding.gateway-config.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 35[2mms[22m[39m
+ [32m✓[39m src/config/io.runtime-snapshot-write.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+ [32m✓[39m src/hooks/frontmatter.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m src/providers/google-shared.preserves-parameters-type-is-missing.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m src/tui/tui-formatters.test.ts [2m([22m[2m26 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/cron/schedule.test.ts [2m([22m[2m22 tests[22m[2m)[22m[32m 26[2mms[22m[39m
+ [32m✓[39m src/cron/service.issue-13992-regression.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m src/infra/host-env-security.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 134[2mms[22m[39m
+ [32m✓[39m src/signal/monitor/event-handler.inbound-contract.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 40[2mms[22m[39m
+ [32m✓[39m src/cli/nodes-cli.coverage.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 221[2mms[22m[39m
+ [32m✓[39m src/channels/plugins/group-mentions.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m src/cron/session-reaper.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m src/cron/isolated-agent.delivers-response-has-heartbeat-ok-but-includes.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 51[2mms[22m[39m
+ [32m✓[39m src/cli/nodes-camera.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+ [32m✓[39m src/plugins/manifest-registry.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m src/cli/gateway-cli.coverage.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+ [32m✓[39m src/markdown/ir.nested-lists.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+ [32m✓[39m src/infra/heartbeat-runner.ghost-reminder.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 39[2mms[22m[39m
+ [32m✓[39m src/infra/process-respawn.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m src/slack/monitor/events/messages.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/cli/program/register.agent.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 40[2mms[22m[39m
+ [32m✓[39m src/whatsapp/resolve-outbound-target.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/config/env-preserve.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m src/tui/tui-session-actions.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m src/memory/query-expansion.test.ts [2m([22m[2m26 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m src/shared/text/reasoning-tags.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m src/infra/format-time/format-time.test.ts [2m([22m[2m32 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+ [32m✓[39m src/config/sessions.cache.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m src/daemon/runtime-paths.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/cron/service.failure-alert.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 37[2mms[22m[39m
+ [32m✓[39m src/media-understanding/providers/image.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 1266[2mms[22m[39m
+     [33m[2m✓[22m[39m routes minimax-portal image models through the MiniMax VLM endpoint [33m 1260[2mms[22m[39m
+ [32m✓[39m src/tui/tui.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m src/cli/program/preaction.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 30[2mms[22m[39m
+ [32m✓[39m src/infra/infra-store.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m src/plugins/hooks.model-override-wiring.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m ui/src/ui/services/config-wizard.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m src/infra/net/ssrf.pinning.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m src/channels/plugins/outbound/discord.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/cli/daemon-cli/restart-health.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m src/channels/plugins/plugins-channel.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m src/infra/net/fetch-guard.ssrf.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 18[2mms[22m[39m
+ [32m✓[39m src/plugins/voice-call.plugin.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m src/infra/boundary-path.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 31[2mms[22m[39m
+ [32m✓[39m src/markdown/ir.blockquote-spacing.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m src/daemon/service-audit.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/cli/skills-cli.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/cli/program/routes.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m src/plugins/update.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 61[2mms[22m[39m
+ [32m✓[39m src/memory/manager.mistral-provider.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m src/cli/program/message/helpers.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m src/wizard/onboarding.finalize.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 73[2mms[22m[39m
+ [32m✓[39m src/infra/tailscale.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m src/infra/unhandled-rejections.test.ts [2m([22m[2m32 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m src/acp/server.startup.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 179[2mms[22m[39m
+ [32m✓[39m src/config/group-policy.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m src/channels/channel-config.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m src/infra/fetch.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m src/cron/service.store.migration.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 35[2mms[22m[39m
+ [32m✓[39m src/plugin-sdk/group-access.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m src/infra/push-apns.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m src/cli/pairing-cli.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 24[2mms[22m[39m
+ [32m✓[39m src/cron/service.persists-delivered-status.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+ [32m✓[39m src/plugin-sdk/webhook-request-guards.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m src/infra/openclaw-root.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m src/infra/heartbeat-runner.model-override.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+ [32m✓[39m src/infra/provider-usage.fetch.claude.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m src/config/talk.normalize.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m src/version.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m src/config/config.identity-defaults.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 34[2mms[22m[39m
+ [32m✓[39m src/infra/heartbeat-visibility.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m src/infra/path-env.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/secrets/exec-secret-ref-id-parity.test.ts [2m([22m[2m33 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m ui/src/ui/controllers/agents.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m src/secrets/runtime.coverage.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m src/process/supervisor/adapters/pty.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m src/infra/exec-obfuscation-detect.test.ts [2m([22m[2m22 tests[22m[2m)[22m[32m 9[2mms[22m[39m

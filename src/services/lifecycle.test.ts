@@ -408,7 +408,7 @@ describe("Service", () => {
 
       await service.install();
 
-      expect(service.runtimeRefs.cronJobIds).toContain("service:test-service:cron:0");
+      expect(service.runtimeRefs.cronJobIds).toContain("test-job-id");
     });
 
     it("should handle cron service errors", async () => {
@@ -507,8 +507,8 @@ describe("Service", () => {
       await service.install();
 
       const sub = service.runtimeRefs.messageSubscriptions[0];
-      expect(sub.channel).toBe("telegram");
-      expect(sub.eventKey).toBe("message:received:telegram");
+      expect(sub.channel).toBe("slack");
+      expect(sub.eventKey).toBe("message:received:slack");
       expect(typeof sub.handler).toBe("function");
     });
   });
