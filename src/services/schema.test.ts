@@ -1,4 +1,3 @@
-import { Value } from "@sinclair/typebox/value";
 import { describe, expect, it } from "vitest";
 import { ServiceManifestSchema, isServiceManifest, type ServiceManifest } from "./schema.js";
 
@@ -44,6 +43,7 @@ const dailyBriefingService: ServiceManifest = {
     },
     taskSources: {
       type: "array",
+      description: "Task sources to include in briefing",
       items: {
         type: "string",
         enum: ["apple-reminders", "things", "todoist"],
@@ -53,6 +53,7 @@ const dailyBriefingService: ServiceManifest = {
     },
     delivery: {
       type: "object",
+      description: "Delivery configuration for the briefing",
       required: true,
       properties: {
         channel: {
@@ -68,6 +69,7 @@ const dailyBriefingService: ServiceManifest = {
     },
     format: {
       type: "string",
+      description: "Format of the briefing output",
       enum: ["concise", "detailed", "bullet-points"],
       default: "bullet-points",
     },
@@ -168,6 +170,7 @@ const webhookReceiverService: ServiceManifest = {
     },
     rateLimit: {
       type: "object",
+      description: "Rate limiting configuration",
       properties: {
         requestsPerMinute: { type: "number", default: 60 },
         burst: { type: "number", default: 10 },
@@ -276,6 +279,7 @@ const messageProcessorService: ServiceManifest = {
     },
     rateLimit: {
       type: "object",
+      description: "Rate limiting configuration",
       properties: {
         perUserPerMinute: { type: "number", default: 10 },
         maxAttachmentSize: { type: "string", default: "25MB" },
@@ -314,16 +318,19 @@ const dataDashboardService: ServiceManifest = {
   config: {
     title: {
       type: "string",
+      description: "Dashboard title",
       default: "My Dashboard",
       required: true,
     },
     layout: {
       type: "string",
+      description: "Dashboard layout type",
       enum: ["grid", "list", "compact"],
       default: "grid",
     },
     theme: {
       type: "string",
+      description: "Dashboard theme",
       enum: ["auto", "light", "dark"],
       default: "auto",
     },
@@ -377,6 +384,7 @@ const dataDashboardService: ServiceManifest = {
     },
     access: {
       type: "object",
+      description: "Access control configuration",
       properties: {
         public: { type: "boolean", default: false },
         password: { type: "string" },
@@ -405,22 +413,22 @@ const dataDashboardService: ServiceManifest = {
 describe("ServiceManifest Schema", () => {
   describe("TypeBox Schema Validation", () => {
     it("should validate Daily Briefing service", () => {
-      const result = isServiceManifest( dailyBriefingService);
+      const result = isServiceManifest(dailyBriefingService);
       expect(result).toBe(true);
     });
 
     it("should validate Webhook Receiver service", () => {
-      const result = isServiceManifest( webhookReceiverService);
+      const result = isServiceManifest(webhookReceiverService);
       expect(result).toBe(true);
     });
 
     it("should validate Message Processor service", () => {
-      const result = isServiceManifest( messageProcessorService);
+      const result = isServiceManifest(messageProcessorService);
       expect(result).toBe(true);
     });
 
     it("should validate Data Dashboard service", () => {
-      const result = isServiceManifest( dataDashboardService);
+      const result = isServiceManifest(dataDashboardService);
       expect(result).toBe(true);
     });
   });
@@ -491,49 +499,49 @@ describe("ServiceManifest Schema", () => {
   describe("Required Fields Validation", () => {
     it("should require id field", () => {
       const { id: _id, ...invalidService } = dailyBriefingService;
-      const result = isServiceManifest( invalidService);
+      const result = isServiceManifest(invalidService);
       expect(result).toBe(false);
     });
 
     it("should require name field", () => {
       const { name: _name, ...invalidService } = dailyBriefingService;
-      const result = isServiceManifest( invalidService);
+      const result = isServiceManifest(invalidService);
       expect(result).toBe(false);
     });
 
     it("should require description field", () => {
       const { description: _description, ...invalidService } = dailyBriefingService;
-      const result = isServiceManifest( invalidService);
+      const result = isServiceManifest(invalidService);
       expect(result).toBe(false);
     });
 
     it("should require version field", () => {
       const { version: _version, ...invalidService } = dailyBriefingService;
-      const result = isServiceManifest( invalidService);
+      const result = isServiceManifest(invalidService);
       expect(result).toBe(false);
     });
 
     it("should require trigger field", () => {
       const { trigger: _trigger, ...invalidService } = dailyBriefingService;
-      const result = isServiceManifest( invalidService);
+      const result = isServiceManifest(invalidService);
       expect(result).toBe(false);
     });
 
     it("should require config field", () => {
       const { config: _config, ...invalidService } = dailyBriefingService;
-      const result = isServiceManifest( invalidService);
+      const result = isServiceManifest(invalidService);
       expect(result).toBe(false);
     });
 
     it("should require requires field", () => {
       const { requires: _requires, ...invalidService } = dailyBriefingService;
-      const result = isServiceManifest( invalidService);
+      const result = isServiceManifest(invalidService);
       expect(result).toBe(false);
     });
 
     it("should require capabilities field", () => {
       const { capabilities: _capabilities, ...invalidService } = dailyBriefingService;
-      const result = isServiceManifest( invalidService);
+      const result = isServiceManifest(invalidService);
       expect(result).toBe(false);
     });
   });
@@ -548,7 +556,7 @@ describe("ServiceManifest Schema", () => {
           timezone: "UTC",
         },
       };
-      expect(isServiceManifest( service)).toBe(true);
+      expect(isServiceManifest(service)).toBe(true);
     });
 
     it("should accept valid webhook trigger", () => {
@@ -560,7 +568,7 @@ describe("ServiceManifest Schema", () => {
           methods: ["POST", "PUT"],
         },
       };
-      expect(isServiceManifest( service)).toBe(true);
+      expect(isServiceManifest(service)).toBe(true);
     });
 
     it("should accept valid message trigger", () => {
@@ -575,7 +583,7 @@ describe("ServiceManifest Schema", () => {
           },
         },
       };
-      expect(isServiceManifest( service)).toBe(true);
+      expect(isServiceManifest(service)).toBe(true);
     });
 
     it("should accept valid web trigger", () => {
@@ -587,7 +595,7 @@ describe("ServiceManifest Schema", () => {
           auth: "public" as const,
         },
       };
-      expect(isServiceManifest( service)).toBe(true);
+      expect(isServiceManifest(service)).toBe(true);
     });
   });
 
@@ -604,7 +612,7 @@ describe("ServiceManifest Schema", () => {
 
       for (const category of validCategories) {
         const service = { ...dailyBriefingService, category };
-        expect(isServiceManifest( service)).toBe(true);
+        expect(isServiceManifest(service)).toBe(true);
       }
     });
   });
@@ -623,7 +631,7 @@ describe("ServiceManifest Schema", () => {
             },
           },
         };
-        expect(isServiceManifest( service)).toBe(true);
+        expect(isServiceManifest(service)).toBe(true);
       }
     });
   });
@@ -631,39 +639,39 @@ describe("ServiceManifest Schema", () => {
   describe("Optional Fields", () => {
     it("should accept service without $schema", () => {
       const { $schema: _$schema, ...service } = dailyBriefingService;
-      expect(isServiceManifest( service)).toBe(true);
+      expect(isServiceManifest(service)).toBe(true);
     });
 
     it("should accept service without author", () => {
       const { author: _author, ...service } = dailyBriefingService;
-      expect(isServiceManifest( service)).toBe(true);
+      expect(isServiceManifest(service)).toBe(true);
     });
 
     it("should accept service without category", () => {
       const { category: _category, ...service } = dailyBriefingService;
-      expect(isServiceManifest( service)).toBe(true);
+      expect(isServiceManifest(service)).toBe(true);
     });
 
     it("should accept service without execution config", () => {
       const { execution: _execution, ...service } = dailyBriefingService;
-      expect(isServiceManifest( service)).toBe(true);
+      expect(isServiceManifest(service)).toBe(true);
     });
   });
 
   describe("Edge Cases", () => {
     it("should accept empty config object", () => {
       const service = { ...dailyBriefingService, config: {} };
-      expect(isServiceManifest( service)).toBe(true);
+      expect(isServiceManifest(service)).toBe(true);
     });
 
     it("should accept empty requires object", () => {
       const service = { ...dailyBriefingService, requires: {} };
-      expect(isServiceManifest( service)).toBe(true);
+      expect(isServiceManifest(service)).toBe(true);
     });
 
     it("should accept empty capabilities object", () => {
       const service = { ...dailyBriefingService, capabilities: {} };
-      expect(isServiceManifest( service)).toBe(true);
+      expect(isServiceManifest(service)).toBe(true);
     });
 
     it("should accept complex nested config structures", () => {
@@ -696,7 +704,7 @@ describe("ServiceManifest Schema", () => {
           },
         },
       };
-      expect(isServiceManifest( service)).toBe(true);
+      expect(isServiceManifest(service)).toBe(true);
     });
   });
 

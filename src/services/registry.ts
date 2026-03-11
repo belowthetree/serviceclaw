@@ -986,7 +986,8 @@ export class ServiceRegistry {
       byState[service.state] = (byState[service.state] ?? 0) + 1;
       const categoryKey = (service.category ?? "custom") as string;
       byCategory[categoryKey] = (byCategory[categoryKey] ?? 0) + 1;
-      byTriggerType[service.triggerType as string] = (byTriggerType[service.triggerType as string] ?? 0) + 1;
+      byTriggerType[service.triggerType as string] =
+        (byTriggerType[service.triggerType as string] ?? 0) + 1;
     }
 
     return {

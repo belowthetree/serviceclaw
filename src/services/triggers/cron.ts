@@ -49,6 +49,8 @@ export class ServiceCronTrigger {
       name: this.manifest.name,
       agentId,
       sessionTarget: this.manifest.execution?.sessionTarget ?? "isolated",
+      enabled: true,
+      wakeMode: "next-heartbeat",
       schedule: {
         kind: "cron",
         expr: trigger.schedule,

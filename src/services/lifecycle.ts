@@ -385,6 +385,11 @@ export class Service {
    * Validate that a state transition is allowed
    */
   private validateStateTransition(from: ServiceState, to: ServiceState): boolean {
+    // Same-state transitions are always allowed
+    if (from === to) {
+      return true;
+    }
+
     // Define allowed transitions
     const allowedTransitions: Record<ServiceState, ServiceState[]> = {
       pending: ["validating", "validation_error"],
@@ -782,7 +787,8 @@ export class Service {
       const unregister = registerPluginHttpRoute({
         path,
         handler,
-        auth: trigger.auth?.type === "none" || trigger.auth?.type === undefined ? "gateway" : "plugin",
+        auth:
+          trigger.auth?.type === "none" || trigger.auth?.type === undefined ? "gateway" : "plugin",
         pluginId: `service:${this.id}`,
         source: "service-trigger",
         registry: this.deps.pluginRegistry,
@@ -933,7 +939,9 @@ export class Service {
    * Rollback installation on failure
    */
   private async rollback(rollbackStack: RollbackAction[], error: Error): Promise<void> {
-    logger.error(`Service ${this.id}: Installation failed, rolling back...`, { error: error.message });
+    logger.error(`Service ${this.id}: Installation failed, rolling back...`, {
+      error: error.message,
+    });
 
     // Execute rollback actions in reverse order
     while (rollbackStack.length > 0) {
@@ -943,7 +951,9 @@ export class Service {
           await action();
         } catch (rollbackError) {
           // Log rollback errors but continue with other rollbacks
-          logger.error(`Service ${this.id}: Rollback action failed`, { error: String(rollbackError) });
+          logger.error(`Service ${this.id}: Rollback action failed`, {
+            error: String(rollbackError),
+          });
         }
       }
     }
@@ -1023,7 +1033,9 @@ export class Service {
             await this.deps.cronService.remove(jobId);
             logger.debug(`Service ${this.id}: Removed cron job ${jobId}`);
           } catch (error) {
-            logger.error(`Service ${this.id}: Failed to remove cron job ${jobId}`, { error: String(error) });
+            logger.error(`Service ${this.id}: Failed to remove cron job ${jobId}`, {
+              error: String(error),
+            });
           }
         }
       }
@@ -1034,7 +1046,9 @@ export class Service {
           unregister();
           logger.debug(`Service ${this.id}: Unregistered webhook`);
         } catch (error) {
-          logger.error(`Service ${this.id}: Failed to unregister webhook`, { error: String(error) });
+          logger.error(`Service ${this.id}: Failed to unregister webhook`, {
+            error: String(error),
+          });
         }
       }
 
@@ -1044,7 +1058,9 @@ export class Service {
           unregisterInternalHook(sub.eventKey, sub.handler);
           logger.debug(`Service ${this.id}: Unsubscribed from ${sub.channel}`);
         } catch (error) {
-          logger.error(`Service ${this.id}: Failed to unsubscribe from ${sub.channel}`, { error: String(error) });
+          logger.error(`Service ${this.id}: Failed to unsubscribe from ${sub.channel}`, {
+            error: String(error),
+          });
         }
       }
 
@@ -1079,6 +1095,7 @@ export class Service {
    * Record a successful execution
    */
   recordSuccess(): void {
+    this._executionStats.totalRuns++;
     this._executionStats.successfulRuns++;
     this._executionStats.lastRunAt = new Date();
     this._updatedAt = new Date();
@@ -1088,6 +1105,7 @@ export class Service {
    * Record a failed execution
    */
   recordFailure(error: Error): void {
+    this._executionStats.totalRuns++;
     this._executionStats.failedRuns++;
     this._executionStats.lastError = {
       message: error.message,

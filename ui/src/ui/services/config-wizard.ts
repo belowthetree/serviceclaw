@@ -1379,11 +1379,4 @@ declare global {
 
 export default ServiceConfigWizard;
 export { getInputType, validateField, humanize };
-export type {
-  ServiceConfigField,
-  ServiceManifest,
-  ServiceOption,
-  WizardStep,
-  WizardState,
-  InputType,
-};
+export type { ServiceManifest, ServiceOption, WizardStep, WizardState, InputType };

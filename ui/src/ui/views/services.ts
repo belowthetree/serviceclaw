@@ -26,7 +26,7 @@ type ServiceManifest = {
       items?: { type?: string; enum?: string[] };
       minimum?: number;
       maximum?: number;
-      "x-openclaw"?: { inputType?: string };
+      "x-openclaw"?: { inputType?: string; validateOn?: "blur" | "change" | "submit" };
     }
   >;
   requires: unknown;

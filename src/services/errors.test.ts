@@ -1194,19 +1194,25 @@ describe("Integration scenarios", () => {
       coordinator.add({
         resourceId: "cron:job1",
         description: "Cron job 1",
-        execute: async () => { rolledBack.push("cron:job1"); },
+        execute: async () => {
+          rolledBack.push("cron:job1");
+        },
       });
 
       coordinator.add({
         resourceId: "webhook:/hook1",
         description: "Webhook 1",
-        execute: async () => { rolledBack.push("webhook:/hook1"); },
+        execute: async () => {
+          rolledBack.push("webhook:/hook1");
+        },
       });
 
       coordinator.add({
         resourceId: "subscription:discord",
         description: "Discord subscription",
-        execute: async () => { rolledBack.push("subscription:discord"); },
+        execute: async () => {
+          rolledBack.push("subscription:discord");
+        },
       });
 
       // Execute rollback

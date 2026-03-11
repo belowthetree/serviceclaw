@@ -5,12 +5,12 @@ import type { DevicePairingList } from "./controllers/devices.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import type { ExecApprovalsFile, ExecApprovalsSnapshot } from "./controllers/exec-approvals.ts";
 import type { SkillMessage } from "./controllers/skills.ts";
-import type { ServiceWithStats } from "./types.ts";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway.ts";
 import type { Tab } from "./navigation.ts";
 import type { UiSettings } from "./storage.ts";
 import type { ThemeTransitionContext } from "./theme-transition.ts";
 import type { ThemeMode } from "./theme.ts";
+import type { ServiceWithStats } from "./types.ts";
 import type {
   AgentsListResult,
   AgentsFilesListResult,

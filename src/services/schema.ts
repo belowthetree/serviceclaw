@@ -24,7 +24,7 @@ const JsonValue = Type.Recursive((Self) =>
     Type.Null(),
     Type.Array(Self),
     Type.Record(Type.String(), Self),
-  ])
+  ]),
 );
 
 // =============================================================================
@@ -508,31 +508,31 @@ export const ServiceManifestSchema = Type.Object(
 // =============================================================================
 
 /** Service category type */
-export type ServiceCategory = Static<typeof stringEnum<typeof ServiceCategories>>;
+export type ServiceCategory = (typeof ServiceCategories)[number];
 
 /** Trigger type */
-export type TriggerType = Static<typeof stringEnum<typeof TriggerTypes>>;
+export type TriggerType = (typeof TriggerTypes)[number];
 
 /** Config field type */
-export type ConfigFieldType = Static<typeof stringEnum<typeof ConfigFieldTypes>>;
+export type ConfigFieldType = (typeof ConfigFieldTypes)[number];
 
 /** Webhook auth type */
-export type WebhookAuthType = Static<typeof stringEnum<typeof WebhookAuthTypes>>;
+export type WebhookAuthType = (typeof WebhookAuthTypes)[number];
 
 /** Session target */
-export type SessionTarget = Static<typeof stringEnum<typeof SessionTargets>>;
+export type SessionTarget = (typeof SessionTargets)[number];
 
 /** Backoff strategy */
-export type BackoffStrategy = Static<typeof stringEnum<typeof BackoffStrategies>>;
+export type BackoffStrategy = (typeof BackoffStrategies)[number];
 
 /** Match type for message triggers */
-export type MatchType = Static<typeof stringEnum<typeof MatchTypes>>;
+export type MatchType = (typeof MatchTypes)[number];
 
 /** Response mode */
-export type ResponseMode = Static<typeof stringEnum<typeof ResponseModes>>;
+export type ResponseMode = (typeof ResponseModes)[number];
 
 /** Widget type */
-export type WidgetType = Static<typeof stringEnum<typeof WidgetTypes>>;
+export type WidgetType = (typeof WidgetTypes)[number];
 
 /** Cron trigger */
 export type CronTrigger = Static<typeof CronTriggerSchema>;

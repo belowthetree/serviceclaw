@@ -19,7 +19,7 @@ import type { ServiceManifest, ServiceConfig } from "./schema.js";
 
 const mockCronService = (): CronService =>
   ({
-    add: vi.fn().mockResolvedValue(undefined),
+    add: vi.fn().mockResolvedValue({ id: "test-job-id" }),
     remove: vi.fn().mockResolvedValue(undefined),
     list: vi.fn().mockResolvedValue([]),
     start: vi.fn().mockResolvedValue(undefined),
@@ -31,6 +31,9 @@ const mockCronService = (): CronService =>
     getJob: vi.fn().mockReturnValue(undefined),
     wake: vi.fn().mockReturnValue(undefined),
     listPage: vi.fn().mockResolvedValue({ jobs: [], nextCursor: undefined }),
+    enableByService: vi.fn().mockResolvedValue({ success: true, count: 1 }),
+    disableByService: vi.fn().mockResolvedValue({ success: true, count: 1 }),
+    removeByService: vi.fn().mockResolvedValue({ success: true, count: 1 }),
   }) as unknown as CronService;
 
 const mockPluginRegistry = (): PluginRegistry =>
@@ -223,6 +226,7 @@ describe("Service", () => {
     });
 
     it("should update timestamps on state change", () => {
+      vi.useFakeTimers();
       const deps = createMockDeps();
       const service = new Service(baseManifest, baseConfig, deps);
       const beforeUpdate = service.updatedAt;
@@ -232,33 +236,34 @@ describe("Service", () => {
       service.setState("validating");
 
       expect(service.updatedAt.getTime()).toBeGreaterThanOrEqual(beforeUpdate.getTime());
+      vi.useRealTimers();
     });
   });
 
   describe("Enable/Disable", () => {
-    it("should enable service from installed state", () => {
+    it("should enable service from installed state", async () => {
       const deps = createMockDeps();
       const service = new Service(baseManifest, baseConfig, deps, "installed");
 
-      void service.enable();
+      await service.enable();
 
       expect(service.state).toBe("enabled");
     });
 
-    it("should enable service from disabled state", () => {
+    it("should enable service from disabled state", async () => {
       const deps = createMockDeps();
       const service = new Service(baseManifest, baseConfig, deps, "disabled");
 
-      void service.enable();
+      await service.enable();
 
       expect(service.state).toBe("enabled");
     });
 
-    it("should disable service from enabled state", () => {
+    it("should disable service from enabled state", async () => {
       const deps = createMockDeps();
       const service = new Service(baseManifest, baseConfig, deps, "enabled");
 
-      void service.disable();
+      await service.disable();
 
       expect(service.state).toBe("disabled");
     });
@@ -517,8 +522,8 @@ describe("Service", () => {
       await service.uninstall();
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(vi.mocked(deps.cronService).remove).toHaveBeenCalledWith(
-        "service:test-service:cron:0",
+      expect(vi.mocked(deps.cronService).removeByService).toHaveBeenCalledWith(
+        "test-service",
       );
     });
 
@@ -575,7 +580,7 @@ describe("Service", () => {
       const error = new Error("Test error");
       service.recordFailure(error);
 
-      expect(service.executionStats.totalRuns).toBe(0);
+      expect(service.executionStats.totalRuns).toBe(1);
       expect(service.executionStats.successfulRuns).toBe(0);
       expect(service.executionStats.failedRuns).toBe(1);
       expect(service.executionStats.lastError).toBeDefined();
@@ -592,6 +597,7 @@ describe("Service", () => {
     });
 
     it("should update timestamp on execution record", () => {
+      vi.useFakeTimers();
       const deps = createMockDeps();
       const service = new Service(baseManifest, baseConfig, deps);
       const beforeUpdate = service.updatedAt;
@@ -600,6 +606,7 @@ describe("Service", () => {
       service.recordSuccess();
 
       expect(service.updatedAt.getTime()).toBeGreaterThanOrEqual(beforeUpdate.getTime());
+      vi.useRealTimers();
     });
   });
 
@@ -617,6 +624,7 @@ describe("Service", () => {
     });
 
     it("should update timestamp on config update", () => {
+      vi.useFakeTimers();
       const deps = createMockDeps();
       const service = new Service(baseManifest, baseConfig, deps);
       const beforeUpdate = service.updatedAt;
@@ -625,6 +633,7 @@ describe("Service", () => {
       service.updateConfig({});
 
       expect(service.updatedAt.getTime()).toBeGreaterThanOrEqual(beforeUpdate.getTime());
+      vi.useRealTimers();
     });
   });
 
@@ -788,22 +797,22 @@ describe("Service Lifecycle Integration", () => {
     expect(vi.mocked(deps.cronService).add).toHaveBeenCalledTimes(1);
 
     // Enable
-    void service.enable();
+    await service.enable();
     expect(service.state).toBe("enabled");
 
     // Disable
-    void service.disable();
+    await service.disable();
     expect(service.state).toBe("disabled");
 
     // Re-enable
-    void service.enable();
+    await service.enable();
     expect(service.state).toBe("enabled");
 
     // Uninstall
     await service.uninstall();
     expect(service.state).toBe("pending");
     // eslint-disable-next-line @typescript-eslint/unbound-method
-    expect(vi.mocked(deps.cronService).remove).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(deps.cronService).removeByService).toHaveBeenCalledTimes(1);
   });
 
   it("should handle error recovery", async () => {
@@ -812,7 +821,7 @@ describe("Service Lifecycle Integration", () => {
 
     // Install and enable
     await service.install();
-    void service.enable();
+    await service.enable();
     expect(service.state).toBe("enabled");
 
     // Simulate runtime error
@@ -823,7 +832,7 @@ describe("Service Lifecycle Integration", () => {
 
     // Recover by disabling and re-enabling
     service.setState("disabled");
-    void service.enable();
+    await service.enable();
     expect(service.state).toBe("enabled");
   });
 
@@ -832,8 +841,8 @@ describe("Service Lifecycle Integration", () => {
     const service = new Service(baseManifest, baseConfig, deps);
 
     await service.install();
-    void service.enable();
-    void service.disable();
+    await service.enable();
+    await service.disable();
 
     const history = service.stateHistory;
     expect(history.length).toBeGreaterThanOrEqual(3);

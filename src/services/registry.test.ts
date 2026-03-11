@@ -283,7 +283,10 @@ describe("ServiceRegistry", () => {
       const initialConfig = { greeting: "Hello" };
       await registry.register(sampleManifest, initialConfig);
 
-      // Modify state
+      // Modify state through valid transitions
+      await registry.updateState("test-service", "validating");
+      await registry.updateState("test-service", "installing");
+      await registry.updateState("test-service", "installed");
       await registry.updateState("test-service", "enabled");
 
       // Get fresh instance
@@ -291,7 +294,7 @@ describe("ServiceRegistry", () => {
 
       expect(service?.state).toBe("enabled");
       expect(service?.config).toEqual(initialConfig);
-      expect(service?.stateHistory).toHaveLength(1);
+      expect(service?.stateHistory).toHaveLength(4);
     });
   });
 
@@ -347,8 +350,12 @@ describe("ServiceRegistry", () => {
     });
 
     it("should throw InvalidStateTransitionError for invalid transitions", async () => {
+      // First get to installed state through valid transitions
+      await registry.updateState("test-service", "validating");
+      await registry.updateState("test-service", "installing");
       await registry.updateState("test-service", "installed");
 
+      // Now try an invalid transition from installed back to pending
       await expect(registry.updateState("test-service", "pending")).rejects.toThrow(
         InvalidStateTransitionError,
       );
@@ -365,7 +372,7 @@ describe("ServiceRegistry", () => {
       await registry.updateState("test-service", "validating"); // Should not throw
 
       const service = await registry.get("test-service");
-      expect(service?.stateHistory).toHaveLength(1);
+      expect(service?.stateHistory).toHaveLength(2);
     });
   });
 
@@ -587,6 +594,9 @@ describe("ServiceRegistry", () => {
     });
 
     it("should filter by state", async () => {
+      await registry.updateState("test-service", "validating");
+      await registry.updateState("test-service", "installing");
+      await registry.updateState("test-service", "installed");
       await registry.updateState("test-service", "enabled");
 
       const services = await registry.list({ state: "enabled" });
@@ -627,6 +637,9 @@ describe("ServiceRegistry", () => {
   describe("getByState", () => {
     beforeEach(async () => {
       await registry.register(sampleManifest);
+      await registry.updateState("test-service", "validating");
+      await registry.updateState("test-service", "installing");
+      await registry.updateState("test-service", "installed");
       await registry.updateState("test-service", "enabled");
     });
 
@@ -667,12 +680,18 @@ describe("ServiceRegistry", () => {
     });
 
     it("should enable service", async () => {
+      await registry.updateState("test-service", "validating");
+      await registry.updateState("test-service", "installing");
+      await registry.updateState("test-service", "installed");
       await registry.enable("test-service");
       const service = await registry.get("test-service");
       expect(service?.state).toBe("enabled");
     });
 
     it("should disable service", async () => {
+      await registry.updateState("test-service", "validating");
+      await registry.updateState("test-service", "installing");
+      await registry.updateState("test-service", "installed");
       await registry.enable("test-service");
       await registry.disable("test-service");
       const service = await registry.get("test-service");
@@ -686,6 +705,8 @@ describe("ServiceRegistry", () => {
     });
 
     it("should mark as installing", async () => {
+      // First transition to validating, then to installing
+      await registry.updateState("test-service", "validating");
       await registry.markInstalling("test-service");
       const service = await registry.get("test-service");
       expect(service?.state).toBe("installing");
@@ -703,6 +724,10 @@ describe("ServiceRegistry", () => {
   describe("markError", () => {
     beforeEach(async () => {
       await registry.register(sampleManifest);
+      // Transition through valid states: pending -> validating -> installing -> installed -> enabled
+      await registry.updateState("test-service", "validating");
+      await registry.updateState("test-service", "installing");
+      await registry.updateState("test-service", "installed");
       await registry.enable("test-service");
     });
 
@@ -748,6 +773,10 @@ describe("ServiceRegistry", () => {
     beforeEach(async () => {
       await registry.register(sampleManifest);
       await registry.register(webhookManifest);
+      // Transition through valid states to enable
+      await registry.updateState("test-service", "validating");
+      await registry.updateState("test-service", "installing");
+      await registry.updateState("test-service", "installed");
       await registry.updateState("test-service", "enabled");
     });
 
