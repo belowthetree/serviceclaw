@@ -1100,7 +1100,7 @@ Critical Path: T1 → T4 → T6 → T9 → T12-15 → T18 → F1-F4
 
 ---
 
-- [ ] **16. Integration Tests (Full lifecycle)**
+- [x] **18. Integration Tests (Full lifecycle)**
 
   **What to do**:
   - Implement comprehensive integration tests
@@ -1259,7 +1259,7 @@ Critical Path: T1 → T4 → T6 → T9 → T12-15 → T18 → F1-F4
 
 > **4 review agents run in PARALLEL. ALL must APPROVE. Rejection → fix → re-run.**
 
-- [ ] **F1. Plan Compliance Audit** — `oracle`
+- [x] **F1. Plan Compliance Audit** — `oracle`
 
   **What to do**:
   Read the plan end-to-end. For each "Must Have": verify implementation exists (read file, run command, check tests). For each "Must NOT Have": search codebase for forbidden patterns — reject with file:line if found. Check evidence files exist in `.sisyphus/evidence/`. Compare deliverables against plan.
@@ -1274,7 +1274,7 @@ Critical Path: T1 → T4 → T6 → T9 → T12-15 → T18 → F1-F4
 
 ---
 
-- [ ] **F2. Code Quality Review** — `unspecified-high`
+- [x] **F2. Code Quality Review** — `unspecified-high`
 
   **What to do**:
   Run `tsc --noEmit` + `pnpm check` + `bun test`. Review all changed files for: `as any`/`@ts-ignore`, empty catches, console.log in prod, commented-out code, unused imports. Check AI slop: excessive comments, over-abstraction, generic names.
@@ -1289,7 +1289,7 @@ Critical Path: T1 → T4 → T6 → T9 → T12-15 → T18 → F1-F4
 
 ---
 
-- [ ] **F3. Real Manual QA** — `unspecified-high`
+- [x] **F3. Real Manual QA** — `unspecified-high`
 
   **What to do**:
   Start from clean state. Execute EVERY QA scenario from EVERY task — follow exact steps, capture evidence. Test cross-task integration (features working together, not isolation). Test edge cases: empty state, invalid input, rapid actions. Save to `.sisyphus/evidence/final-qa/`.
@@ -1303,7 +1303,7 @@ Critical Path: T1 → T4 → T6 → T9 → T12-15 → T18 → F1-F4
 
 ---
 
-- [ ] **F4. Scope Fidelity Check** — `deep`
+- [x] **F4. Scope Fidelity Check** — `deep`
 
   **What to do**:
   For each task: read "What to do", read actual diff (git log/diff). Verify 1:1 — everything in spec was built (no missing), nothing beyond spec was built (no creep). Check "Must NOT do" compliance. Detect cross-task contamination.

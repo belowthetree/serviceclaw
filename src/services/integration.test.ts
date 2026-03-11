@@ -637,7 +637,7 @@ describe("Service Integration Tests", () => {
       // Record successful execution
       service.recordSuccess();
       expect(service.executionStats.successfulRuns).toBe(1);
-      expect(service.executionStats.totalRuns).toBe(0); // totalRuns tracked separately in trigger handlers
+      expect(service.executionStats.totalRuns).toBe(1); // totalRuns incremented by recordSuccess
 
       // Record failed execution (doesn't increment totalRuns, only failedRuns)
       service.recordFailure(new Error("Test error"));

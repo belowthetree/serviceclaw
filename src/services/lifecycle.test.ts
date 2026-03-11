@@ -522,9 +522,7 @@ describe("Service", () => {
       await service.uninstall();
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(vi.mocked(deps.cronService).removeByService).toHaveBeenCalledWith(
-        "test-service",
-      );
+      expect(vi.mocked(deps.cronService).removeByService).toHaveBeenCalledWith("test-service");
     });
 
     it("should clear runtime refs on uninstall", async () => {
