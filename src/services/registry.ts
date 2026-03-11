@@ -646,8 +646,8 @@ export class ServiceRegistry {
    * @param serviceId - Service identifier
    * @returns Configuration object or undefined if not found
    */
-  async getConfig(serviceId: string): Promise<ServiceConfig | undefined> {
-    return this.readJsonFile<ServiceConfig>(this.getConfigPath(serviceId)) ?? {};
+  async getConfig(serviceId: string): Promise<ServiceConfig | null> {
+    return this.readJsonFile<ServiceConfig>(this.getConfigPath(serviceId));
   }
 
   /**
@@ -735,8 +735,8 @@ export class ServiceRegistry {
    * @param serviceId - Service identifier
    * @returns Runtime refs or undefined if not found
    */
-  async getRuntimeRefs(serviceId: string): Promise<ServiceRuntimeRefs | undefined> {
-    return this.loadRefs(serviceId) ?? undefined;
+  async getRuntimeRefs(serviceId: string): Promise<ServiceRefsFile | null> {
+    return this.loadRefs(serviceId);
   }
 
   // ---------------------------------------------------------------------------
@@ -984,9 +984,9 @@ export class ServiceRegistry {
 
     for (const service of index.services) {
       byState[service.state] = (byState[service.state] ?? 0) + 1;
-      byCategory[service.category ?? "custom"] =
-        (byCategory[service.category ?? "custom"] ?? 0) + 1;
-      byTriggerType[service.triggerType] = (byTriggerType[service.triggerType] ?? 0) + 1;
+      const categoryKey = (service.category ?? "custom") as string;
+      byCategory[categoryKey] = (byCategory[categoryKey] ?? 0) + 1;
+      byTriggerType[service.triggerType as string] = (byTriggerType[service.triggerType as string] ?? 0) + 1;
     }
 
     return {

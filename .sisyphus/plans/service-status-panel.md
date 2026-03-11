@@ -908,7 +908,7 @@ Max Concurrent: 4 (Waves 1 & 2)
 
 ---
 
-- [ ] 14. Run full test suite
+- [x] 14. Run full test suite
 
   **What to do**:
   - Run all unit tests: `bun test`
@@ -953,7 +953,7 @@ Max Concurrent: 4 (Waves 1 & 2)
 
 ---
 
-- [ ] 15. TypeScript check and lint
+- [x] 15. TypeScript check and lint
 
   **What to do**:
   - Run TypeScript compiler: `pnpm tsgo`
@@ -998,7 +998,7 @@ Max Concurrent: 4 (Waves 1 & 2)
 
 ---
 
-- [ ] 16. Manual QA verification
+- [x] 16. Manual QA verification
 
   **What to do**:
   - Start Gateway: `pnpm gateway`

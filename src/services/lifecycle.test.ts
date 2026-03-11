@@ -263,18 +263,18 @@ describe("Service", () => {
       expect(service.state).toBe("disabled");
     });
 
-    it("should reject enable from invalid state", () => {
+    it("should reject enable from invalid state", async () => {
       const deps = createMockDeps();
       const service = new Service(baseManifest, baseConfig, deps, "pending");
 
-      expect(() => service.enable()).toThrow(ServiceStateError);
+      await expect(service.enable()).rejects.toThrow(ServiceStateError);
     });
 
-    it("should reject disable from invalid state", () => {
+    it("should reject disable from invalid state", async () => {
       const deps = createMockDeps();
       const service = new Service(baseManifest, baseConfig, deps, "pending");
 
-      expect(() => service.disable()).toThrow(ServiceStateError);
+      await expect(service.disable()).rejects.toThrow(ServiceStateError);
     });
   });
 
@@ -502,10 +502,9 @@ describe("Service", () => {
       await service.install();
 
       const sub = service.runtimeRefs.messageSubscriptions[0];
-      expect(typeof sub.unsubscribe).toBe("function");
-
-      // Should not throw
-      sub.unsubscribe();
+      expect(sub.channel).toBe("telegram");
+      expect(sub.eventKey).toBe("message:received:telegram");
+      expect(typeof sub.handler).toBe("function");
     });
   });
 

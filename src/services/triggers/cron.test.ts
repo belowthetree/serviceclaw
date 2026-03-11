@@ -81,6 +81,7 @@ function createTestManifest(schedule: string, timezone?: string): ServiceManifes
   return {
     id: "test-service",
     name: "Test Service",
+    description: "A test service for cron triggers",
     version: "1.0.0",
     trigger: {
       type: "cron",
@@ -93,6 +94,12 @@ function createTestManifest(schedule: string, timezone?: string): ServiceManifes
     },
     config: {},
     requires: {},
+    capabilities: {
+      network: false,
+      filesystem: false,
+      shell: false,
+      browser: false,
+    },
   };
 }
 

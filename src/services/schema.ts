@@ -13,6 +13,21 @@ import { Type, type Static } from "@sinclair/typebox";
 import { stringEnum } from "../agents/schema/typebox.js";
 
 // =============================================================================
+// JSON Value Type (recursive type for any valid JSON)
+// =============================================================================
+
+const JsonValue = Type.Recursive((Self) =>
+  Type.Union([
+    Type.String(),
+    Type.Number(),
+    Type.Boolean(),
+    Type.Null(),
+    Type.Array(Self),
+    Type.Record(Type.String(), Self),
+  ])
+);
+
+// =============================================================================
 // Enums and Constants
 // =============================================================================
 
@@ -253,27 +268,15 @@ export const ServiceConfigFieldSchema = Type.Object(
         default: false,
       }),
     ),
-    default: Type.Optional(
-      Type.Any({
-        description: "Default value for the field",
-      }),
-    ),
+    default: Type.Optional(JsonValue),
     // Type-specific properties
     enum: Type.Optional(
       Type.Array(Type.String(), {
         description: "Allowed values for string type",
       }),
     ),
-    items: Type.Optional(
-      Type.Any({
-        description: "Schema for array items (for array type)",
-      }),
-    ),
-    properties: Type.Optional(
-      Type.Record(Type.String(), Type.Any(), {
-        description: "Nested properties (for object type)",
-      }),
-    ),
+    items: Type.Optional(JsonValue),
+    properties: Type.Optional(Type.Record(Type.String(), JsonValue)),
     minimum: Type.Optional(Type.Number()),
     maximum: Type.Optional(Type.Number()),
     minLength: Type.Optional(Type.Number()),

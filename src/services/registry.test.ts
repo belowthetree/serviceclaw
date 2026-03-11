@@ -337,13 +337,13 @@ describe("ServiceRegistry", () => {
     });
 
     it("should update updatedAt timestamp", async () => {
-      const before = new Date().toISOString();
+      const before = Date.now();
       await new Promise((r) => setTimeout(r, 10)); // Small delay
 
       await registry.updateState("test-service", "validating");
 
       const service = await registry.get("test-service");
-      expect(service?.updatedAt).toBeGreaterThanOrEqual(before);
+      expect(new Date(service?.updatedAt ?? 0).getTime()).toBeGreaterThanOrEqual(before);
     });
 
     it("should throw InvalidStateTransitionError for invalid transitions", async () => {

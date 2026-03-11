@@ -1506,20 +1506,17 @@ describe("Service Integration Tests", () => {
             }
 
             await service.enable();
-            const { state: state2 } = service;
-            if (state2 !== "enabled") {
+            if ((service as unknown as { state: string }).state !== "enabled") {
               return { name, success: false, error: "Enable failed" };
             }
 
             await service.disable();
-            const { state: state3 } = service;
-            if (state3 !== "disabled") {
+            if ((service as unknown as { state: string }).state !== "disabled") {
               return { name, success: false, error: "Disable failed" };
             }
 
             await service.uninstall();
-            const { state: state4 } = service;
-            if (state4 !== "pending") {
+            if ((service as unknown as { state: string }).state !== "pending") {
               return { name, success: false, error: "Uninstall failed" };
             }
 

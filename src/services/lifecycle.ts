@@ -14,6 +14,7 @@ import type { ToolPolicyLike } from "../agents/tool-policy.js";
 import type { CronService } from "../cron/service.js";
 import {
   registerInternalHook,
+  unregisterInternalHook,
   type InternalHookHandler,
   type MessageReceivedHookContext,
 } from "../hooks/internal-hooks.js";
@@ -157,10 +158,11 @@ export interface ServiceRuntimeRefs {
   /** Webhook unregister functions */
   webhookUnregisterFns: Array<() => void>;
 
-  /** Message subscription unregistration functions */
+  /** Message subscription handlers for cleanup */
   messageSubscriptions: Array<{
     channel: string;
-    unsubscribe: () => void;
+    eventKey: string;
+    handler: InternalHookHandler;
   }>;
 
   /** Service agent ID */
@@ -780,7 +782,7 @@ export class Service {
       const unregister = registerPluginHttpRoute({
         path,
         handler,
-        auth: trigger.auth?.type === "none" || trigger.auth?.type === undefined ? "none" : "token",
+        auth: trigger.auth?.type === "none" || trigger.auth?.type === undefined ? "gateway" : "plugin",
         pluginId: `service:${this.id}`,
         source: "service-trigger",
         registry: this.deps.pluginRegistry,
@@ -850,17 +852,18 @@ export class Service {
 
       try {
         const eventKey = `message:received:${channelType}`;
-        const unsubscribe = registerHook(eventKey, handler);
+        registerHook(eventKey, handler);
 
         this._runtimeRefs.messageSubscriptions.push({
           channel: channelType,
-          unsubscribe,
+          eventKey,
+          handler,
         });
 
         // Add rollback action
         rollbackStack.push(async () => {
           logger.debug(`Service ${this.id}: Rolling back message subscription for ${channelType}`);
-          unsubscribe();
+          unregisterInternalHook(eventKey, handler);
         });
 
         logger.info(`Service ${this.id}: Subscribed to messages on ${channelType}`);
@@ -930,7 +933,7 @@ export class Service {
    * Rollback installation on failure
    */
   private async rollback(rollbackStack: RollbackAction[], error: Error): Promise<void> {
-    logger.error(`Service ${this.id}: Installation failed, rolling back...`, error);
+    logger.error(`Service ${this.id}: Installation failed, rolling back...`, { error: error.message });
 
     // Execute rollback actions in reverse order
     while (rollbackStack.length > 0) {
@@ -940,7 +943,7 @@ export class Service {
           await action();
         } catch (rollbackError) {
           // Log rollback errors but continue with other rollbacks
-          logger.error(`Service ${this.id}: Rollback action failed`, rollbackError);
+          logger.error(`Service ${this.id}: Rollback action failed`, { error: String(rollbackError) });
         }
       }
     }
@@ -1020,7 +1023,7 @@ export class Service {
             await this.deps.cronService.remove(jobId);
             logger.debug(`Service ${this.id}: Removed cron job ${jobId}`);
           } catch (error) {
-            logger.error(`Service ${this.id}: Failed to remove cron job ${jobId}`, error);
+            logger.error(`Service ${this.id}: Failed to remove cron job ${jobId}`, { error: String(error) });
           }
         }
       }
@@ -1031,17 +1034,17 @@ export class Service {
           unregister();
           logger.debug(`Service ${this.id}: Unregistered webhook`);
         } catch (error) {
-          logger.error(`Service ${this.id}: Failed to unregister webhook`, error);
+          logger.error(`Service ${this.id}: Failed to unregister webhook`, { error: String(error) });
         }
       }
 
       // Unsubscribe from messages
       for (const sub of this._runtimeRefs.messageSubscriptions) {
         try {
-          sub.unsubscribe();
+          unregisterInternalHook(sub.eventKey, sub.handler);
           logger.debug(`Service ${this.id}: Unsubscribed from ${sub.channel}`);
         } catch (error) {
-          logger.error(`Service ${this.id}: Failed to unsubscribe from ${sub.channel}`, error);
+          logger.error(`Service ${this.id}: Failed to unsubscribe from ${sub.channel}`, { error: String(error) });
         }
       }
 
@@ -1059,7 +1062,7 @@ export class Service {
 
       logger.info(`Service ${this.id} uninstalled successfully`);
     } catch (error) {
-      logger.error(`Service ${this.id}: Uninstallation failed`, error);
+      logger.error(`Service ${this.id}: Uninstallation failed`, { error: String(error) });
       throw new ServiceError(
         `Uninstall failed: ${error instanceof Error ? error.message : String(error)}`,
         this.id,
@@ -1184,7 +1187,7 @@ export class ServiceInstaller {
       return service;
     } catch (error) {
       // Rollback is handled within Service.install, but we do additional cleanup here if needed
-      this.logger.error(`Service ${manifest.id} installation failed`, error);
+      this.logger.error(`Service ${manifest.id} installation failed`, { error: String(error) });
       throw error;
     }
   }

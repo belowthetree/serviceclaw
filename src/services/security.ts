@@ -17,6 +17,7 @@
  * @see src/services/schema.ts
  */
 
+import crypto from "node:crypto";
 import { normalizeToolName } from "../agents/tool-policy-shared.js";
 import type { ToolPolicyLike } from "../agents/tool-policy.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
@@ -561,6 +562,7 @@ export class ServiceSecurityManager {
         serviceId,
         toolName: normalizedTool,
         result: "success",
+        details: { toolName: normalizedTool },
       });
 
       logger.info(`Pre-approval revoked for ${serviceId} to use ${normalizedTool}`);
@@ -960,7 +962,7 @@ export class ServiceSecurityManager {
    * Generate a unique audit entry ID
    */
   private generateAuditId(): string {
-    return `audit-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    return `audit-${crypto.randomUUID()}`;
   }
 }
 

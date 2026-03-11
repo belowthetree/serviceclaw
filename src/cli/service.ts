@@ -123,8 +123,7 @@ async function cloneGitRepoAndLoadManifest(
   gitUrl: string,
   progressLabel: string,
 ): Promise<{ manifest: ServiceManifest; tempDir: string } | null> {
-  const os = await import("node:os");
-  const tempDir = path.join(os.tmpdir(), `serviceclaw-service-${Date.now()}`);
+  const tempDir = await fs.mkdtemp("serviceclaw-service-");
 
   try {
     await withProgress(
