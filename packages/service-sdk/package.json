@@ -1,0 +1,55 @@
+{
+  "name": "@openclaw/service-sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for OpenClaw Service Communication Protocol (SCP)",
+  "keywords": [
+    "agent",
+    "openclaw",
+    "protocol",
+    "scp",
+    "sdk",
+    "service",
+    "typescript"
+  ],
+  "homepage": "https://docs.openclaw.ai",
+  "bugs": {
+    "url": "https://github.com/openclaw/openclaw/issues"
+  },
+  "license": "MIT",
+  "author": "OpenClaw",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openclaw/openclaw.git",
+    "directory": "packages/service-sdk"
+  },
+  "files": [
+    "dist/**/*",
+    "src/**/*",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -34,6 +34,7 @@ function createTestManifest(overrides: Partial<ServiceManifest> = {}): ServiceMa
     name: "Test Service",
     description: "A test service",
     version: "1.0.0",
+    entry: "index.js",
     trigger: { type: "cron", schedule: "0 8 * * *" },
     config: {},
     requires: {},

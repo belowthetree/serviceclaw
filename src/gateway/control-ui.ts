@@ -111,7 +111,7 @@ type ControlUiAvatarMeta = {
 };
 
 function applyControlUiSecurityHeaders(res: ServerResponse) {
-  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
   res.setHeader("Content-Security-Policy", buildControlUiCspHeader());
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "no-referrer");

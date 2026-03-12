@@ -327,8 +327,9 @@ export class ServiceSecurityManager {
         // Check if privileged tool is declared
         if (this.isPrivilegedTool(normalizedTool)) {
           const declaredPrivileged =
-            capabilities.privilegedTools?.some((t) => normalizeToolName(t) === normalizedTool) ??
-            false;
+            capabilities.privilegedTools?.some(
+              (t: string) => normalizeToolName(t) === normalizedTool,
+            ) ?? false;
 
           if (!declaredPrivileged) {
             errors.push({
@@ -364,7 +365,7 @@ export class ServiceSecurityManager {
     // Check 3: Validate capability flags are consistent with requirements
     if (
       capabilities.shell &&
-      !requires.tools?.some((t) => {
+      !requires.tools?.some((t: string) => {
         const nt = normalizeToolName(t);
         return nt.includes("bash") || nt.includes("shell") || nt.includes("exec");
       })
@@ -466,8 +467,9 @@ export class ServiceSecurityManager {
 
     // Check if tool is in service's requiresConfirmation list
     const declaredConfirmation =
-      capabilities.requiresConfirmation?.some((t) => normalizeToolName(t) === normalizedTool) ??
-      false;
+      capabilities.requiresConfirmation?.some(
+        (t: string) => normalizeToolName(t) === normalizedTool,
+      ) ?? false;
 
     if (declaredConfirmation) {
       return true;
@@ -476,7 +478,9 @@ export class ServiceSecurityManager {
     // Check if tool is privileged and confirmation is enabled
     if (this.config.requireConfirmation && this.isPrivilegedTool(normalizedTool)) {
       const declaredPrivileged =
-        capabilities.privilegedTools?.some((t) => normalizeToolName(t) === normalizedTool) ?? false;
+        capabilities.privilegedTools?.some(
+          (t: string) => normalizeToolName(t) === normalizedTool,
+        ) ?? false;
 
       if (declaredPrivileged) {
         return true;
@@ -681,7 +685,7 @@ export class ServiceSecurityManager {
     if (this.isPrivilegedTool(normalizedTool)) {
       const declaredPrivileged =
         capabilities.privilegedTools?.some(
-          (t) => normalizeToolName(t) === normalizedTool || t === "*",
+          (t: string) => normalizeToolName(t) === normalizedTool || t === "*",
         ) ?? false;
 
       if (!declaredPrivileged) {

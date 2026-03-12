@@ -68,6 +68,7 @@ import {
 import type { ReadinessChecker } from "./server/readiness.js";
 import type { GatewayWsClient } from "./server/ws-types.js";
 import { handleToolsInvokeHttpRequest } from "./tools-invoke-http.js";
+import { handleServicesHttpRequest } from "./services-http.js";
 
 type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
 
@@ -733,6 +734,11 @@ export function createGatewayHttpServer(opts: {
           rateLimiter,
         }),
       );
+
+      requestStages.push({
+        name: "services-http",
+        run: () => handleServicesHttpRequest(req, res),
+      });
 
       if (controlUiEnabled) {
         requestStages.push({

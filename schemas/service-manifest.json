@@ -1,0 +1,102 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/service-manifest.json",
+  "title": "Service Manifest",
+  "description": "OpenClaw Service Manifest - declarative service definition",
+  "type": "object",
+  "required": ["id", "name", "version", "entry"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier for the service (kebab-case recommended)",
+      "minLength": 1,
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "examples": ["my-service", "daily-briefing", "webhook-receiver"]
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable name for the service",
+      "examples": ["My Service", "Daily Briefing"]
+    },
+    "version": {
+      "type": "string",
+      "description": "Semver version (e.g., '1.0.0')",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[\\w.]+)?$",
+      "examples": ["1.0.0", "2.1.3-beta.1"]
+    },
+    "description": {
+      "type": "string",
+      "description": "Description of what the service does"
+    },
+    "entry": {
+      "type": "string",
+      "description": "Path to entry script (relative to service directory)",
+      "pattern": "^(?!\\/)((?!\\.\\/).)*$",
+      "examples": ["script/entry.ts", "index.js"]
+    },
+    "ui": {
+      "type": "object",
+      "description": "UI configuration for the service",
+      "additionalProperties": false,
+      "properties": {
+        "entry": {
+          "type": "string",
+          "description": "Path to UI entry point (relative to service directory)",
+          "pattern": "^(?!\\/)((?!\\.\\/).)*$",
+          "examples": ["ui/index.html", "ui/app.html"]
+        }
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "description": "Array of capabilities this service declares",
+      "items": {
+        "type": "string",
+        "enum": ["webhook", "cron", "message", "web", "network", "filesystem", "shell", "browser"]
+      },
+      "examples": [
+        ["webhook", "network"],
+        ["cron", "filesystem"]
+      ]
+    },
+    "author": {
+      "type": "string",
+      "description": "Creator/organization name",
+      "examples": ["OpenClaw", "Your Name"]
+    },
+    "category": {
+      "type": "string",
+      "description": "Category for grouping services",
+      "enum": [
+        "productivity",
+        "communication",
+        "monitoring",
+        "automation",
+        "integration",
+        "custom"
+      ],
+      "default": "custom"
+    }
+  },
+  "examples": [
+    {
+      "id": "test-service",
+      "name": "Test Service",
+      "version": "1.0.0",
+      "entry": "script/entry.ts",
+      "description": "A test service for demonstration"
+    },
+    {
+      "id": "webhook-service",
+      "name": "Webhook Handler",
+      "version": "2.1.0",
+      "entry": "index.js",
+      "ui": {
+        "entry": "ui/index.html"
+      },
+      "capabilities": ["webhook", "network"],
+      "category": "integration"
+    }
+  ]
+}

@@ -460,13 +460,13 @@ export class Service {
       errors.push(...triggerErrors);
 
       // Check for required capabilities/tools (soft check - just warnings for now)
-      if (this.manifest.requires.skills?.length) {
+      if (this.manifest.requires?.skills?.length) {
         logger.debug(
           `Service ${this.id} requires skills: ${this.manifest.requires.skills.join(", ")}`,
         );
       }
 
-      if (this.manifest.requires.tools?.length) {
+      if (this.manifest.requires?.tools?.length) {
         logger.debug(
           `Service ${this.id} requires tools: ${this.manifest.requires.tools.join(", ")}`,
         );
@@ -508,7 +508,7 @@ export class Service {
     const errors: string[] = [];
     const configSchema = this.manifest.config;
 
-    for (const [key, fieldSchema] of Object.entries(configSchema)) {
+    for (const [key, fieldSchema] of Object.entries(configSchema ?? {})) {
       const value = this._config[key];
 
       // Check required fields
@@ -572,6 +572,11 @@ export class Service {
   private async validateTrigger(): Promise<string[]> {
     const errors: string[] = [];
     const trigger = this.manifest.trigger;
+
+    if (!trigger) {
+      errors.push("Service trigger is required");
+      return errors;
+    }
 
     switch (trigger.type) {
       case "cron": {
@@ -642,6 +647,14 @@ export class Service {
       // Phase 3: Resource Creation
       const trigger = this.manifest.trigger;
 
+      if (!trigger) {
+        throw new ServiceInstallError(
+          `Service ${this.id} has no trigger defined`,
+          this.id,
+          "create_resources",
+        );
+      }
+
       switch (trigger.type) {
         case "cron":
           await this.installCronTrigger(rollbackStack);
@@ -656,6 +669,12 @@ export class Service {
           // Web UI triggers don't need special installation
           logger.debug(`Service ${this.id} uses web UI trigger - no runtime installation needed`);
           break;
+        default:
+          throw new ServiceInstallError(
+            `Unknown trigger type: ${(trigger as { type: string }).type}`,
+            this.id,
+            "create_resources",
+          );
       }
 
       // Phase 4: Commit
@@ -898,7 +917,7 @@ export class Service {
     // Check keywords
     if (filters.keywords?.length) {
       const content = context.content.toLowerCase();
-      const hasKeyword = filters.keywords.some((kw) => content.includes(kw.toLowerCase()));
+      const hasKeyword = filters.keywords.some((kw: string) => content.includes(kw.toLowerCase()));
       if (!hasKeyword) {
         return false;
       }
@@ -906,7 +925,7 @@ export class Service {
 
     // Check patterns (regex)
     if (filters.patterns?.length) {
-      const hasMatch = filters.patterns.some((pattern) => {
+      const hasMatch = filters.patterns.some((pattern: string) => {
         try {
           const regex = new RegExp(pattern);
           return regex.test(context.content);
@@ -1227,3 +1246,574 @@ export type {
   WebhookTrigger,
   MessageTrigger,
 } from "./schema.js";
+
+// =============================================================================
+// Service Process Lifecycle Manager
+// =============================================================================
+
+import { createProcessSupervisor } from "../process/supervisor/supervisor.js";
+import type {
+  ProcessSupervisor,
+  ManagedRun,
+  TerminationReason,
+} from "../process/supervisor/types.js";
+import { scanServices, getValidServices } from "./discovery.js";
+
+/** Service process lifecycle states */
+export type ServiceProcessState =
+  | "inactive" // Service not running
+  | "starting" // Starting the process
+  | "started" // Process is running
+  | "stopping" // Gracefully stopping
+  | "stopped" // Process stopped normally
+  | "error"; // Process exited with error
+
+/** Service instance representing a running process */
+export interface ServiceProcessInstance {
+  /** Service identifier */
+  serviceId: string;
+  /** Process ID */
+  pid?: number;
+  /** Current process state */
+  state: ServiceProcessState;
+  /** When the process was started */
+  startedAt?: Date;
+  /** When the process stopped (if applicable) */
+  stoppedAt?: Date;
+  /** Exit code (if stopped) */
+  exitCode?: number | null;
+  /** Error message (if error state) */
+  error?: string;
+  /** Managed run from ProcessSupervisor */
+  managedRun?: ManagedRun;
+}
+
+/** Lifecycle hook callbacks */
+export interface LifecycleHooks {
+  /** Called when service starts */
+  onStart?: (serviceId: string, instance: ServiceProcessInstance) => void;
+  /** Called when service stops */
+  onStop?: (serviceId: string, instance: ServiceProcessInstance) => void;
+  /** Called when service state changes */
+  onStateChange?: (
+    serviceId: string,
+    oldState: ServiceProcessState,
+    newState: ServiceProcessState,
+    instance: ServiceProcessInstance,
+  ) => void;
+  /** Called when service outputs to stdout */
+  onStdout?: (serviceId: string, chunk: string) => void;
+  /** Called when service outputs to stderr */
+  onStderr?: (serviceId: string, chunk: string) => void;
+  /** Called when service exits unexpectedly */
+  onUnexpectedExit?: (
+    serviceId: string,
+    instance: ServiceProcessInstance,
+    exitCode: number | null,
+  ) => void;
+}
+
+/** Dependencies for ServiceLifecycleManager */
+export interface ServiceLifecycleManagerDeps {
+  /** ProcessSupervisor for spawning processes */
+  supervisor: ProcessSupervisor;
+  /** Services directory path */
+  servicesDir?: string;
+  /** Session ID for process runs */
+  sessionId: string;
+  /** Backend ID for process runs */
+  backendId: string;
+  /** Function to get valid services (for testing/mocking) */
+  getServices?: (servicesDir?: string) => Promise<
+    Array<{
+      manifest: { id: string; entry: string };
+      path: string;
+    }>
+  >;
+}
+
+/** Error for service lifecycle operations */
+export class ServiceLifecycleError extends Error {
+  constructor(
+    message: string,
+    public readonly serviceId: string,
+    public readonly cause?: Error,
+  ) {
+    super(message);
+    this.name = "ServiceLifecycleError";
+  }
+}
+
+/** Error when service is not found */
+export class ServiceNotFoundError extends ServiceLifecycleError {
+  constructor(serviceId: string) {
+    super(`Service not found: ${serviceId}`, serviceId);
+    this.name = "ServiceNotFoundError";
+  }
+}
+
+/** Error for invalid state transitions */
+export class InvalidProcessStateError extends ServiceLifecycleError {
+  constructor(
+    serviceId: string,
+    public readonly currentState: ServiceProcessState,
+    public readonly attemptedState: ServiceProcessState,
+  ) {
+    super(
+      `Invalid state transition from ${currentState} to ${attemptedState} for service ${serviceId}`,
+      serviceId,
+    );
+    this.name = "InvalidProcessStateError";
+  }
+}
+
+/**
+ * ServiceLifecycleManager manages the process lifecycle of services
+ *
+ * Uses ProcessSupervisor to spawn and manage service processes.
+ * Maintains state machine: inactive → starting → started → stopping → stopped
+ */
+export class ServiceLifecycleManager {
+  private readonly instances = new Map<string, ServiceProcessInstance>();
+  private readonly hooks: LifecycleHooks[] = [];
+  private readonly deps: ServiceLifecycleManagerDeps;
+
+  constructor(deps?: Partial<ServiceLifecycleManagerDeps>) {
+    this.deps = {
+      supervisor: deps?.supervisor ?? createProcessSupervisor(),
+      servicesDir: deps?.servicesDir,
+      sessionId: deps?.sessionId ?? "service-lifecycle",
+      backendId: deps?.backendId ?? "local",
+      getServices: deps?.getServices,
+    };
+  }
+
+  // ===========================================================================
+  // Core Lifecycle Operations
+  // ===========================================================================
+
+  /**
+   * Start a service process
+   *
+   * @param serviceId - The service identifier
+   * @returns The service process instance
+   * @throws ServiceNotFoundError if service doesn't exist
+   * @throws ServiceLifecycleError if service is already running
+   */
+  async startService(serviceId: string): Promise<ServiceProcessInstance> {
+    const existingInstance = this.instances.get(serviceId);
+
+    if (
+      existingInstance &&
+      (existingInstance.state === "starting" || existingInstance.state === "started")
+    ) {
+      throw new ServiceLifecycleError(
+        `Service ${serviceId} is already ${existingInstance.state}`,
+        serviceId,
+      );
+    }
+
+    // Discover service
+    const getServicesFn = this.deps.getServices ?? getValidServices;
+    const services = await getServicesFn(this.deps.servicesDir);
+    const service = services.find((s) => s.manifest.id === serviceId);
+
+    if (!service) {
+      throw new ServiceNotFoundError(serviceId);
+    }
+
+    // Create starting instance
+    const instance: ServiceProcessInstance = {
+      serviceId,
+      state: "starting",
+      startedAt: new Date(),
+    };
+
+    this.instances.set(serviceId, instance);
+    this.emitStateChange(serviceId, "inactive", "starting", instance);
+
+    try {
+      // Spawn the service process
+      const entryPath = `${service.path}/${service.manifest.entry}`;
+      const managedRun = await this.deps.supervisor.spawn({
+        mode: "child",
+        argv: ["node", entryPath],
+        cwd: service.path,
+        sessionId: this.deps.sessionId,
+        backendId: this.deps.backendId,
+        scopeKey: `service:${serviceId}`,
+        replaceExistingScope: true,
+        onStdout: (chunk) => {
+          this.emitStdout(serviceId, chunk);
+        },
+        onStderr: (chunk) => {
+          this.emitStderr(serviceId, chunk);
+        },
+      });
+
+      // Update instance with run info
+      instance.managedRun = managedRun;
+      instance.pid = managedRun.pid;
+      instance.state = "started";
+
+      this.emitStateChange(serviceId, "starting", "started", instance);
+      this.emitStart(serviceId, instance);
+
+      // Set up exit handling
+      this.handleProcessExit(serviceId, instance, managedRun);
+
+      return instance;
+    } catch (error) {
+      instance.state = "error";
+      instance.error = error instanceof Error ? error.message : String(error);
+      instance.stoppedAt = new Date();
+
+      this.emitStateChange(serviceId, "starting", "error", instance);
+
+      throw new ServiceLifecycleError(
+        `Failed to start service ${serviceId}: ${instance.error}`,
+        serviceId,
+        error instanceof Error ? error : undefined,
+      );
+    }
+  }
+
+  /**
+   * Stop a service process gracefully
+   *
+   * @param serviceId - The service identifier
+   * @param reason - Optional reason for stopping
+   * @throws ServiceNotFoundError if service doesn't exist or isn't running
+   */
+  async stopService(serviceId: string, reason: TerminationReason = "manual-cancel"): Promise<void> {
+    const instance = this.instances.get(serviceId);
+
+    if (!instance) {
+      throw new ServiceNotFoundError(serviceId);
+    }
+
+    if (instance.state !== "started" && instance.state !== "starting") {
+      throw new ServiceLifecycleError(
+        `Cannot stop service ${serviceId} from state ${instance.state}`,
+        serviceId,
+      );
+    }
+
+    const oldState = instance.state;
+    instance.state = "stopping";
+    this.emitStateChange(serviceId, oldState, "stopping", instance);
+
+    try {
+      if (instance.managedRun) {
+        instance.managedRun.cancel(reason);
+        // Wait for process to exit
+        await instance.managedRun.wait();
+      }
+
+      instance.state = "stopped";
+      instance.stoppedAt = new Date();
+
+      this.emitStateChange(serviceId, "stopping", "stopped", instance);
+      this.emitStop(serviceId, instance);
+    } catch (error) {
+      instance.state = "error";
+      instance.error = error instanceof Error ? error.message : String(error);
+      instance.stoppedAt = new Date();
+
+      this.emitStateChange(serviceId, "stopping", "error", instance);
+
+      throw new ServiceLifecycleError(
+        `Failed to stop service ${serviceId}: ${instance.error}`,
+        serviceId,
+        error instanceof Error ? error : undefined,
+      );
+    }
+  }
+
+  /**
+   * Get the current state of a service process
+   *
+   * @param serviceId - The service identifier
+   * @returns The service process instance or undefined if not running
+   */
+  getServiceState(serviceId: string): ServiceProcessInstance | undefined {
+    return this.instances.get(serviceId);
+  }
+
+  /**
+   * List all currently running services
+   *
+   * @returns Array of running service instances
+   */
+  listRunningServices(): ServiceProcessInstance[] {
+    return Array.from(this.instances.values()).filter(
+      (instance) => instance.state === "started" || instance.state === "starting",
+    );
+  }
+
+  /**
+   * List all services (including stopped)
+   *
+   * @returns Array of all service instances
+   */
+  listAllServices(): ServiceProcessInstance[] {
+    return Array.from(this.instances.values());
+  }
+
+  /**
+   * Check if a service is currently running
+   *
+   * @param serviceId - The service identifier
+   * @returns True if service is running (started state)
+   */
+  isRunning(serviceId: string): boolean {
+    const instance = this.instances.get(serviceId);
+    return instance?.state === "started";
+  }
+
+  // ===========================================================================
+  // Lifecycle Hooks
+  // ===========================================================================
+
+  /**
+   * Register lifecycle hooks
+   *
+   * @param hooks - Lifecycle hook callbacks
+   * @returns Unregister function
+   */
+  registerLifecycleHooks(hooks: LifecycleHooks): () => void {
+    this.hooks.push(hooks);
+
+    // Return unregister function
+    return () => {
+      const index = this.hooks.indexOf(hooks);
+      if (index > -1) {
+        this.hooks.splice(index, 1);
+      }
+    };
+  }
+
+  private emitStart(serviceId: string, instance: ServiceProcessInstance): void {
+    for (const hook of this.hooks) {
+      try {
+        hook.onStart?.(serviceId, instance);
+      } catch (error) {
+        logger.error(`Lifecycle hook onStart failed for ${serviceId}: ${String(error)}`);
+      }
+    }
+  }
+
+  private emitStop(serviceId: string, instance: ServiceProcessInstance): void {
+    for (const hook of this.hooks) {
+      try {
+        hook.onStop?.(serviceId, instance);
+      } catch (error) {
+        logger.error(`Lifecycle hook onStop failed for ${serviceId}: ${String(error)}`);
+      }
+    }
+  }
+
+  private emitStateChange(
+    serviceId: string,
+    oldState: ServiceProcessState,
+    newState: ServiceProcessState,
+    instance: ServiceProcessInstance,
+  ): void {
+    for (const hook of this.hooks) {
+      try {
+        hook.onStateChange?.(serviceId, oldState, newState, instance);
+      } catch (error) {
+        logger.error(`Lifecycle hook onStateChange failed for ${serviceId}: ${String(error)}`);
+      }
+    }
+  }
+
+  private emitStdout(serviceId: string, chunk: string): void {
+    for (const hook of this.hooks) {
+      try {
+        hook.onStdout?.(serviceId, chunk);
+      } catch (error) {
+        logger.error(`Lifecycle hook onStdout failed for ${serviceId}: ${String(error)}`);
+      }
+    }
+  }
+
+  private emitStderr(serviceId: string, chunk: string): void {
+    for (const hook of this.hooks) {
+      try {
+        hook.onStderr?.(serviceId, chunk);
+      } catch (error) {
+        logger.error(`Lifecycle hook onStderr failed for ${serviceId}: ${String(error)}`);
+      }
+    }
+  }
+
+  private emitUnexpectedExit(
+    serviceId: string,
+    instance: ServiceProcessInstance,
+    exitCode: number | null,
+  ): void {
+    for (const hook of this.hooks) {
+      try {
+        hook.onUnexpectedExit?.(serviceId, instance, exitCode);
+      } catch (error) {
+        logger.error(`Lifecycle hook onUnexpectedExit failed for ${serviceId}: ${String(error)}`);
+      }
+    }
+  }
+
+  // ===========================================================================
+  // Process Exit Handling
+  // ===========================================================================
+
+  private handleProcessExit(
+    serviceId: string,
+    instance: ServiceProcessInstance,
+    managedRun: ManagedRun,
+  ): void {
+    // Handle async exit - don't await, let it run in background
+    managedRun.wait().then(
+      (exit) => {
+        // Only process if instance is still tracked and in started/starting state
+        const currentInstance = this.instances.get(serviceId);
+        if (!currentInstance || currentInstance.managedRun?.runId !== managedRun.runId) {
+          return; // Instance was replaced or removed
+        }
+
+        const oldState = currentInstance.state;
+
+        if (exit.exitCode === 0) {
+          currentInstance.state = "stopped";
+        } else {
+          currentInstance.state = "error";
+          currentInstance.error = `Process exited with code ${exit.exitCode}`;
+          if (exit.stderr) {
+            currentInstance.error += `: ${exit.stderr.slice(0, 200)}`;
+          }
+        }
+
+        currentInstance.exitCode = exit.exitCode;
+        currentInstance.stoppedAt = new Date();
+
+        this.emitStateChange(serviceId, oldState, currentInstance.state, currentInstance);
+        this.emitStop(serviceId, currentInstance);
+
+        // Notify about unexpected exit (not from manual stop)
+        if (oldState === "started" && exit.exitCode !== 0) {
+          this.emitUnexpectedExit(serviceId, currentInstance, exit.exitCode);
+        }
+
+        // Clean up stopped/error instances after a delay to allow state inspection
+        if (currentInstance.state === "stopped" || currentInstance.state === "error") {
+          setTimeout(() => {
+            const instance = this.instances.get(serviceId);
+            if (instance?.managedRun?.runId === managedRun.runId) {
+              this.instances.delete(serviceId);
+            }
+          }, 60000); // Keep for 1 minute for inspection
+        }
+      },
+      (error) => {
+        // Handle error case
+        const currentInstance = this.instances.get(serviceId);
+        if (!currentInstance || currentInstance.managedRun?.runId !== managedRun.runId) {
+          return;
+        }
+
+        const oldState = currentInstance.state;
+        currentInstance.state = "error";
+        currentInstance.error = error instanceof Error ? error.message : String(error);
+        currentInstance.stoppedAt = new Date();
+
+        this.emitStateChange(serviceId, oldState, "error", currentInstance);
+        this.emitStop(serviceId, currentInstance);
+      },
+    );
+  }
+
+  // ===========================================================================
+  // Cleanup
+  // ===========================================================================
+
+  /**
+   * Stop all running services
+   *
+   * @param reason - Optional reason for stopping
+   */
+  async stopAllServices(reason: TerminationReason = "manual-cancel"): Promise<void> {
+    const running = this.listRunningServices();
+    await Promise.all(
+      running.map((instance) =>
+        this.stopService(instance.serviceId, reason).catch((error) => {
+          logger.error(`Failed to stop service ${instance.serviceId}:`, error);
+        }),
+      ),
+    );
+  }
+
+  /**
+   * Clean up all stopped/error instances from memory
+   */
+  cleanupStoppedServices(): void {
+    for (const [serviceId, instance] of this.instances) {
+      if (instance.state === "stopped" || instance.state === "error") {
+        this.instances.delete(serviceId);
+      }
+    }
+  }
+
+  /**
+   * Dispose the manager and stop all services
+   */
+  async dispose(): Promise<void> {
+    await this.stopAllServices("manual-cancel");
+    this.instances.clear();
+    this.hooks.length = 0;
+  }
+}
+
+// =============================================================================
+// Factory and Singleton
+// =============================================================================
+
+let defaultLifecycleManager: ServiceLifecycleManager | null = null;
+
+/**
+ * Create a new ServiceLifecycleManager instance
+ *
+ * @param deps - Optional dependencies
+ * @returns New ServiceLifecycleManager
+ */
+export function createServiceLifecycleManager(
+  deps?: Partial<ServiceLifecycleManagerDeps>,
+): ServiceLifecycleManager {
+  return new ServiceLifecycleManager(deps);
+}
+
+/**
+ * Get the default ServiceLifecycleManager singleton
+ *
+ * @returns ServiceLifecycleManager singleton
+ */
+export function getServiceLifecycleManager(): ServiceLifecycleManager {
+  if (!defaultLifecycleManager) {
+    defaultLifecycleManager = new ServiceLifecycleManager();
+  }
+  return defaultLifecycleManager;
+}
+
+/**
+ * Reset the default lifecycle manager (mainly for testing)
+ */
+export function resetServiceLifecycleManager(): void {
+  defaultLifecycleManager = null;
+}
+
+/**
+ * Set a custom default lifecycle manager (mainly for testing)
+ *
+ * @param manager - Manager to use as default
+ */
+export function setServiceLifecycleManager(manager: ServiceLifecycleManager): void {
+  defaultLifecycleManager = manager;
+}

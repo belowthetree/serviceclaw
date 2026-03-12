@@ -14,21 +14,32 @@
  */
 
 import fs from "node:fs/promises";
+import type { IncomingMessage } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import type { WebSocket } from "ws";
+import type { SCPMessage } from "../../packages/service-sdk/src/types.js";
 import type { CronService } from "../cron/service.js";
 import { clearInternalHooks } from "../hooks/internal-hooks.js";
+import { createSubsystemLogger } from "../logging/subsystem.js";
 import type { PluginRegistry } from "../plugins/registry.js";
+import type { ProcessSupervisor } from "../process/supervisor/types.js";
 import {
   Service,
   ServiceInstallError,
   ServiceStateError,
+  ServiceLifecycleManager,
+  ServiceLifecycleError,
   type ServiceLifecycleDeps,
 } from "./lifecycle.js";
 import { ServiceRegistry, ServiceAlreadyExistsError, resetServiceRegistry } from "./registry.js";
-import type { ServiceManifest, ServiceConfig } from "./schema.js";
+import type { ServiceManifest } from "./schema.js";
+import { createSCPServer, SCPErrorCodes } from "./scp-server.js";
 import { ServiceSecurityManager } from "./security.js";
+
+// Type for service config (not exported from schema.js)
+type ServiceConfig = Record<string, unknown>;
 
 // =============================================================================
 // Test Fixtures - Real Example Service Manifests
@@ -1530,6 +1541,1040 @@ describe("Service Integration Tests", () => {
       for (const result of results) {
         expect(result.success).toBe(true);
       }
+    });
+  });
+
+  // ===========================================================================
+  // End-to-End Service Framework Integration Tests
+  // ===========================================================================
+
+  describe("End-to-End Service Workflow with SCP Communication", () => {
+    // Mock WebSocket class for testing
+    class MockWebSocket {
+      readyState = 1;
+      OPEN = 1;
+      CLOSED = 3;
+      private listeners: Map<string, Array<(...args: unknown[]) => void>> = new Map();
+      sentMessages: string[] = [];
+      closed = false;
+      closeCode?: number;
+      closeReason?: string;
+
+      on(event: string, handler: (...args: unknown[]) => void): void {
+        if (!this.listeners.has(event)) {
+          this.listeners.set(event, []);
+        }
+        this.listeners.get(event)!.push(handler);
+      }
+
+      once(event: string, handler: (...args: unknown[]) => void): void {
+        const onceHandler = (...args: unknown[]) => {
+          handler(...args);
+          this.off(event, onceHandler);
+        };
+        this.on(event, onceHandler);
+      }
+
+      off(event: string, handler: (...args: unknown[]) => void): void {
+        const handlers = this.listeners.get(event);
+        if (handlers) {
+          const index = handlers.indexOf(handler);
+          if (index > -1) {
+            handlers.splice(index, 1);
+          }
+        }
+      }
+
+      emit(event: string, ...args: unknown[]): void {
+        const handlers = this.listeners.get(event);
+        if (handlers) {
+          handlers.forEach((h) => h(...args));
+        }
+      }
+
+      send(data: string): void {
+        this.sentMessages.push(data);
+      }
+
+      close(code = 1000, reason = "Normal closure"): void {
+        this.closed = true;
+        this.closeCode = code;
+        this.closeReason = reason;
+        this.emit("close", code, Buffer.from(reason));
+      }
+
+      terminate(): void {
+        this.closed = true;
+      }
+
+      simulateMessage(data: string): void {
+        this.emit("message", Buffer.from(data));
+      }
+
+      simulateError(err: Error): void {
+        this.emit("error", err);
+      }
+
+      simulateOpen(): void {
+        this.emit("open");
+      }
+    }
+
+    // Mock ProcessSupervisor for testing
+    const createMockProcessSupervisor = (
+      opts: { shouldFail?: boolean; exitCode?: number | null } = {},
+    ) => {
+      const runs = new Map<
+        string,
+        {
+          runId: string;
+          pid: number;
+          wait: () => Promise<{ exitCode: number | null; stderr: string }>;
+          cancel: (reason?: string) => void;
+        }
+      >();
+
+      return {
+        spawn: vi.fn().mockImplementation(async (input) => {
+          if (opts.shouldFail) {
+            throw new Error("Failed to start");
+          }
+
+          const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+          const pid = 12345 + runs.size;
+
+          // Create a wait function that doesn't resolve immediately (keeps service running)
+          let resolveWait: (value: { exitCode: number | null; stderr: string }) => void;
+          const waitPromise = new Promise<{ exitCode: number | null; stderr: string }>(
+            (resolve) => {
+              resolveWait = resolve;
+            },
+          );
+
+          const run = {
+            runId,
+            pid,
+            wait: () => waitPromise,
+            cancel: vi.fn().mockImplementation(() => {
+              resolveWait({ exitCode: opts.exitCode ?? 0, stderr: "" });
+            }),
+          };
+
+          runs.set(runId, run);
+
+          // Simulate stdout/stderr callbacks
+          if (input.onStdout) {
+            setTimeout(() => input.onStdout!("Service process started"), 10);
+          }
+          if (input.onStderr) {
+            setTimeout(() => input.onStderr!(""), 10);
+          }
+
+          return run;
+        }),
+        cancel: vi.fn(),
+        cancelScope: vi.fn(),
+        reconcileOrphans: vi.fn().mockResolvedValue(undefined),
+        getRecord: vi.fn().mockReturnValue(undefined),
+      };
+    };
+
+    // Helper to safely stop a service (handles already stopped services)
+    const safeStopService = async (
+      lifecycleManager: ServiceLifecycleManager,
+      serviceId: string,
+    ) => {
+      const state = lifecycleManager.getServiceState(serviceId);
+      if (state?.state === "started" || state?.state === "starting") {
+        try {
+          await lifecycleManager.stopService(serviceId);
+        } catch (err) {
+          // Service might already be stopped
+        }
+      }
+    };
+
+    // Helper to create SCP message
+    const createSCPMessage = (
+      type: string,
+      serviceId: string,
+      payload: Record<string, unknown>,
+    ) => ({
+      type,
+      serviceId,
+      requestId: `req-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      timestamp: new Date().toISOString(),
+      payload,
+    });
+
+    it("should complete full workflow: start service → SCP connect → service.started → service.action → agent.response → service.stopped → stop service", async () => {
+      // Setup mocks
+      const mockSupervisor = createMockProcessSupervisor();
+      const lifecycleManager = new ServiceLifecycleManager({
+        supervisor: mockSupervisor as unknown as ProcessSupervisor,
+        servicesDir: tempDir,
+        getServices: async () => [
+          {
+            manifest: { id: "test-service", entry: "index.js" },
+            path: tempDir,
+          },
+        ],
+      });
+
+      // Create mock logger for SCP server
+      const scpLogger = {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+        child: vi.fn().mockReturnThis(),
+      } as unknown as ReturnType<typeof createSubsystemLogger>;
+
+      // Track action handler invocations
+      const actionResults: Array<{
+        serviceId: string;
+        action: string;
+        params: unknown;
+        success: boolean;
+      }> = [];
+
+      // Create SCP server with action handler
+      const scpServer = createSCPServer({
+        logger: scpLogger,
+        onServiceStarted: async (serviceId, payload) => {
+          expect(serviceId).toBe("test-service");
+          expect(payload.name).toBe("Test Service");
+          expect(payload.version).toBe("1.0.0");
+          expect(payload.actions).toContain("create-task");
+        },
+        onServiceAction: async (serviceId, action, params) => {
+          actionResults.push({ serviceId, action, params, success: true });
+          return { taskId: `task-${Date.now()}`, status: "created" };
+        },
+        onServiceStopped: async (serviceId, payload) => {
+          expect(serviceId).toBe("test-service");
+          expect(payload.reason).toBe("shutdown");
+        },
+        onDisconnect: async (serviceId) => {
+          expect(serviceId).toBe("test-service");
+        },
+      });
+
+      // Step 1: Start the service via lifecycle manager
+      const startPromise = lifecycleManager.startService("test-service");
+
+      // Wait for service to start
+      const instance = await startPromise;
+      expect(instance.serviceId).toBe("test-service");
+      expect(instance.state).toBe("started");
+      expect(instance.pid).toBeDefined();
+
+      // Step 2: Simulate SCP WebSocket connection
+      const mockSocket = new MockWebSocket();
+      const mockRequest = {
+        url: "/__openclaw__/scp?serviceId=test-service",
+        socket: { remoteAddress: "127.0.0.1" },
+      } as unknown as IncomingMessage;
+
+      scpServer.handleUpgrade(mockRequest, mockSocket as unknown as WebSocket);
+
+      // Verify connection was established
+      expect(scpLogger.info).toHaveBeenCalledWith(expect.stringContaining("test-service"));
+
+      // Step 3: Send service.started message
+      const startedMessage = createSCPMessage("service.started", "test-service", {
+        name: "Test Service",
+        version: "1.0.0",
+        actions: ["create-task", "send-message"],
+      });
+
+      mockSocket.simulateMessage(JSON.stringify(startedMessage));
+
+      // Wait for response
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Verify agent.response was sent
+      const startedResponse = mockSocket.sentMessages.find((msg) => {
+        const parsed = JSON.parse(msg);
+        return parsed.type === "agent.response" && parsed.requestId === startedMessage.requestId;
+      });
+      expect(startedResponse).toBeDefined();
+      expect(JSON.parse(startedResponse!).payload.success).toBe(true);
+
+      // Step 4: Send service.action (create-task)
+      const actionMessage = createSCPMessage("service.action", "test-service", {
+        action: "create-task",
+        params: { title: "Test Task", description: "Test Description" },
+        timeout: 30000,
+      });
+
+      mockSocket.simulateMessage(JSON.stringify(actionMessage));
+
+      // Wait for action to be processed
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Verify action was handled and response sent
+      expect(actionResults).toHaveLength(1);
+      expect(actionResults[0].serviceId).toBe("test-service");
+      expect(actionResults[0].action).toBe("create-task");
+      expect(actionResults[0].success).toBe(true);
+
+      const actionResponse = mockSocket.sentMessages.find((msg) => {
+        const parsed = JSON.parse(msg);
+        return parsed.type === "agent.response" && parsed.requestId === actionMessage.requestId;
+      });
+      expect(actionResponse).toBeDefined();
+      const actionResponseParsed = JSON.parse(actionResponse!);
+      expect(actionResponseParsed.payload.success).toBe(true);
+      expect(actionResponseParsed.payload.data.taskId).toBeDefined();
+
+      // Step 5: Send service.stopped message
+      const stoppedMessage = createSCPMessage("service.stopped", "test-service", {
+        reason: "shutdown",
+        exitCode: 0,
+      });
+
+      mockSocket.simulateMessage(JSON.stringify(stoppedMessage));
+
+      // Wait for response
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Verify agent.response was sent and socket was closed
+      const stoppedResponse = mockSocket.sentMessages.find((msg) => {
+        const parsed = JSON.parse(msg);
+        return parsed.type === "agent.response" && parsed.requestId === stoppedMessage.requestId;
+      });
+      expect(stoppedResponse).toBeDefined();
+      expect(JSON.parse(stoppedResponse!).payload.success).toBe(true);
+
+      // Step 6: Stop service via lifecycle manager
+      await safeStopService(lifecycleManager, "test-service");
+
+      const finalState = lifecycleManager.getServiceState("test-service");
+      expect(finalState?.state).toBe("stopped");
+      expect(finalState?.stoppedAt).toBeDefined();
+
+      // Cleanup
+      await scpServer.close();
+    });
+
+    it("should handle service that fails to start", async () => {
+      const mockSupervisor = createMockProcessSupervisor({ shouldFail: true });
+      const lifecycleManager = new ServiceLifecycleManager({
+        supervisor: mockSupervisor as unknown as ProcessSupervisor,
+        servicesDir: tempDir,
+        getServices: async () => [
+          {
+            manifest: { id: "failing-service", entry: "index.js" },
+            path: tempDir,
+          },
+        ],
+      });
+
+      // Attempt to start service that will fail
+      await expect(lifecycleManager.startService("failing-service")).rejects.toThrow(
+        ServiceLifecycleError,
+      );
+
+      // Verify service is in error state
+      const state = lifecycleManager.getServiceState("failing-service");
+      expect(state?.state).toBe("error");
+      expect(state?.error).toContain("Failed to start");
+    });
+
+    it("should handle WebSocket disconnection during operation", async () => {
+      const mockSupervisor = createMockProcessSupervisor();
+      const lifecycleManager = new ServiceLifecycleManager({
+        supervisor: mockSupervisor as unknown as ProcessSupervisor,
+        servicesDir: tempDir,
+        getServices: async () => [
+          {
+            manifest: { id: "disconnect-service", entry: "index.js" },
+            path: tempDir,
+          },
+        ],
+      });
+
+      const scpLogger = {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+        child: vi.fn().mockReturnThis(),
+      } as unknown as ReturnType<typeof createSubsystemLogger>;
+
+      let disconnectCalled = false;
+      const scpServer = createSCPServer({
+        logger: scpLogger,
+        onDisconnect: async (serviceId) => {
+          expect(serviceId).toBe("disconnect-service");
+          disconnectCalled = true;
+        },
+      });
+
+      // Start service
+      await lifecycleManager.startService("disconnect-service");
+
+      // Connect WebSocket
+      const mockSocket = new MockWebSocket();
+      const mockRequest = {
+        url: "/__openclaw__/scp?serviceId=disconnect-service",
+        socket: { remoteAddress: "127.0.0.1" },
+      } as unknown as IncomingMessage;
+
+      scpServer.handleUpgrade(mockRequest, mockSocket as unknown as WebSocket);
+
+      // Send started message
+      const startedMessage = createSCPMessage("service.started", "disconnect-service", {
+        name: "Disconnect Test Service",
+        version: "1.0.0",
+      });
+      mockSocket.simulateMessage(JSON.stringify(startedMessage));
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Simulate abrupt disconnection
+      mockSocket.simulateError(new Error("Connection lost"));
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(disconnectCalled).toBe(true);
+
+      // Cleanup
+      await safeStopService(lifecycleManager, "disconnect-service");
+      await scpServer.close();
+    });
+
+    it("should handle invalid message format", async () => {
+      const mockSupervisor = createMockProcessSupervisor();
+      const lifecycleManager = new ServiceLifecycleManager({
+        supervisor: mockSupervisor as unknown as ProcessSupervisor,
+        servicesDir: tempDir,
+        getServices: async () => [
+          {
+            manifest: { id: "invalid-msg-service", entry: "index.js" },
+            path: tempDir,
+          },
+        ],
+      });
+
+      const scpLogger = {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+        child: vi.fn().mockReturnThis(),
+      } as unknown as ReturnType<typeof createSubsystemLogger>;
+
+      const scpServer = createSCPServer({
+        logger: scpLogger,
+      });
+
+      // Start service and connect
+      await lifecycleManager.startService("invalid-msg-service");
+
+      const mockSocket = new MockWebSocket();
+      const mockRequest = {
+        url: "/__openclaw__/scp?serviceId=invalid-msg-service",
+        socket: { remoteAddress: "127.0.0.1" },
+      } as unknown as IncomingMessage;
+
+      scpServer.handleUpgrade(mockRequest, mockSocket as unknown as WebSocket);
+
+      // Test 1: Invalid JSON
+      mockSocket.simulateMessage("not valid json{{");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      let errorResponse = mockSocket.sentMessages.find((msg) => {
+        const parsed = JSON.parse(msg);
+        return parsed.type === "agent.response" && parsed.payload.success === false;
+      });
+      expect(errorResponse).toBeDefined();
+      expect(JSON.parse(errorResponse!).payload.error.code).toBe(SCPErrorCodes.INVALID_MESSAGE);
+
+      // Clear sent messages
+      mockSocket.sentMessages = [];
+
+      // Test 2: Missing required fields
+      mockSocket.simulateMessage(JSON.stringify({ type: "service.started" })); // Missing serviceId, requestId, timestamp
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      errorResponse = mockSocket.sentMessages.find((msg) => {
+        const parsed = JSON.parse(msg);
+        return parsed.type === "agent.response" && parsed.payload.success === false;
+      });
+      expect(errorResponse).toBeDefined();
+      expect(JSON.parse(errorResponse!).payload.error.code).toBe(
+        SCPErrorCodes.MISSING_REQUIRED_FIELD,
+      );
+
+      // Clear sent messages
+      mockSocket.sentMessages = [];
+
+      // Test 3: Service ID mismatch
+      mockSocket.simulateMessage(
+        JSON.stringify({
+          type: "service.started",
+          serviceId: "wrong-service-id",
+          requestId: "req-123",
+          timestamp: new Date().toISOString(),
+          payload: { name: "Test", version: "1.0.0" },
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      errorResponse = mockSocket.sentMessages.find((msg) => {
+        const parsed = JSON.parse(msg);
+        return parsed.type === "agent.response" && parsed.payload.success === false;
+      });
+      expect(errorResponse).toBeDefined();
+      expect(JSON.parse(errorResponse!).payload.error.code).toBe(SCPErrorCodes.SERVICE_ID_MISMATCH);
+
+      // Cleanup
+      await safeStopService(lifecycleManager, "invalid-msg-service");
+      await scpServer.close();
+    });
+
+    it("should handle action handler not found", async () => {
+      const mockSupervisor = createMockProcessSupervisor();
+      const lifecycleManager = new ServiceLifecycleManager({
+        supervisor: mockSupervisor as unknown as ProcessSupervisor,
+        servicesDir: tempDir,
+        getServices: async () => [
+          {
+            manifest: { id: "no-action-service", entry: "index.js" },
+            path: tempDir,
+          },
+        ],
+      });
+
+      const scpLogger = {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+        child: vi.fn().mockReturnThis(),
+      } as unknown as ReturnType<typeof createSubsystemLogger>;
+
+      // Create SCP server WITHOUT action handler
+      const scpServer = createSCPServer({
+        logger: scpLogger,
+      });
+
+      // Start service and connect
+      await lifecycleManager.startService("no-action-service");
+
+      const mockSocket = new MockWebSocket();
+      const mockRequest = {
+        url: "/__openclaw__/scp?serviceId=no-action-service",
+        socket: { remoteAddress: "127.0.0.1" },
+      } as unknown as IncomingMessage;
+
+      scpServer.handleUpgrade(mockRequest, mockSocket as unknown as WebSocket);
+
+      // Send started message first
+      const startedMessage = createSCPMessage("service.started", "no-action-service", {
+        name: "No Action Service",
+        version: "1.0.0",
+      });
+      mockSocket.simulateMessage(JSON.stringify(startedMessage));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Clear sent messages
+      mockSocket.sentMessages = [];
+
+      // Send action request for non-existent handler
+      const actionMessage = createSCPMessage("service.action", "no-action-service", {
+        action: "unknown-action",
+        params: {},
+      });
+      mockSocket.simulateMessage(JSON.stringify(actionMessage));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const errorResponse = mockSocket.sentMessages.find((msg) => {
+        const parsed = JSON.parse(msg);
+        return parsed.type === "agent.response" && parsed.requestId === actionMessage.requestId;
+      });
+      expect(errorResponse).toBeDefined();
+      const parsed = JSON.parse(errorResponse!);
+      expect(parsed.payload.success).toBe(false);
+      expect(parsed.payload.error.code).toBe(SCPErrorCodes.ACTION_NOT_FOUND);
+
+      // Cleanup
+      await safeStopService(lifecycleManager, "no-action-service");
+      await scpServer.close();
+    });
+
+    it("should ensure isolation between multiple services", async () => {
+      const mockSupervisor = createMockProcessSupervisor();
+      const lifecycleManager = new ServiceLifecycleManager({
+        supervisor: mockSupervisor as unknown as ProcessSupervisor,
+        servicesDir: tempDir,
+        getServices: async () => [
+          { manifest: { id: "service-a", entry: "index.js" }, path: tempDir },
+          { manifest: { id: "service-b", entry: "index.js" }, path: tempDir },
+        ],
+      });
+
+      const scpLogger = {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+        child: vi.fn().mockReturnThis(),
+      } as unknown as ReturnType<typeof createSubsystemLogger>;
+
+      const serviceAActions: string[] = [];
+      const serviceBActions: string[] = [];
+
+      const scpServer = createSCPServer({
+        logger: scpLogger,
+        onServiceAction: async (serviceId, action) => {
+          if (serviceId === "service-a") {
+            serviceAActions.push(action);
+          } else if (serviceId === "service-b") {
+            serviceBActions.push(action);
+          }
+          return { received: true };
+        },
+      });
+
+      // Start both services
+      await lifecycleManager.startService("service-a");
+      await lifecycleManager.startService("service-b");
+
+      // Connect both services
+      const mockSocketA = new MockWebSocket();
+      const mockSocketB = new MockWebSocket();
+
+      scpServer.handleUpgrade(
+        {
+          url: "/__openclaw__/scp?serviceId=service-a",
+          socket: { remoteAddress: "127.0.0.1" },
+        } as unknown as IncomingMessage,
+        mockSocketA as unknown as WebSocket,
+      );
+      scpServer.handleUpgrade(
+        {
+          url: "/__openclaw__/scp?serviceId=service-b",
+          socket: { remoteAddress: "127.0.0.1" },
+        } as unknown as IncomingMessage,
+        mockSocketB as unknown as WebSocket,
+      );
+
+      // Send started messages
+      mockSocketA.simulateMessage(
+        JSON.stringify(
+          createSCPMessage("service.started", "service-a", {
+            name: "Service A",
+            version: "1.0.0",
+            actions: ["action-1"],
+          }),
+        ),
+      );
+      mockSocketB.simulateMessage(
+        JSON.stringify(
+          createSCPMessage("service.started", "service-b", {
+            name: "Service B",
+            version: "1.0.0",
+            actions: ["action-2"],
+          }),
+        ),
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Send actions to each service
+      mockSocketA.simulateMessage(
+        JSON.stringify(
+          createSCPMessage("service.action", "service-a", {
+            action: "action-1",
+            params: { data: "from-a" },
+          }),
+        ),
+      );
+      mockSocketB.simulateMessage(
+        JSON.stringify(
+          createSCPMessage("service.action", "service-b", {
+            action: "action-2",
+            params: { data: "from-b" },
+          }),
+        ),
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Verify isolation - each service only received its own actions
+      expect(serviceAActions).toHaveLength(1);
+      expect(serviceAActions[0]).toBe("action-1");
+      expect(serviceBActions).toHaveLength(1);
+      expect(serviceBActions[0]).toBe("action-2");
+
+      // Verify responses went to correct services
+      const responseA = mockSocketA.sentMessages.filter((msg) => {
+        const parsed = JSON.parse(msg);
+        return parsed.type === "agent.response" && parsed.payload.success === true;
+      });
+      const responseB = mockSocketB.sentMessages.filter((msg) => {
+        const parsed = JSON.parse(msg);
+        return parsed.type === "agent.response" && parsed.payload.success === true;
+      });
+
+      expect(responseA.length).toBeGreaterThanOrEqual(1);
+      expect(responseB.length).toBeGreaterThanOrEqual(1);
+
+      // Cleanup
+      await safeStopService(lifecycleManager, "test-service");
+      await scpServer.close();
+    });
+
+    it("should handle service process crash and cleanup", async () => {
+      // Create a supervisor that auto-exits after a delay to simulate crash
+      const runs = new Map<string, { cancel: (reason?: string) => void }>();
+      const mockSupervisor = {
+        spawn: vi.fn().mockImplementation(async (input) => {
+          const runId = `run-${Date.now()}`;
+          const pid = 12345;
+
+          let resolveWait: (value: { exitCode: number | null; stderr: string }) => void;
+          const waitPromise = new Promise<{ exitCode: number | null; stderr: string }>(
+            (resolve) => {
+              resolveWait = resolve;
+            },
+          );
+
+          const run = {
+            runId,
+            pid,
+            wait: () => waitPromise,
+            cancel: vi.fn().mockImplementation(() => {
+              resolveWait({ exitCode: 1, stderr: "" });
+            }),
+          };
+
+          runs.set(runId, run);
+
+          if (input.onStdout) {
+            setTimeout(() => input.onStdout!("Service process started"), 10);
+          }
+
+          // Auto-exit after delay to simulate crash
+          setTimeout(() => {
+            resolveWait({ exitCode: 1, stderr: "" });
+          }, 50);
+
+          return run;
+        }),
+        cancel: vi.fn(),
+        cancelScope: vi.fn(),
+        reconcileOrphans: vi.fn().mockResolvedValue(undefined),
+        getRecord: vi.fn().mockReturnValue(undefined),
+      };
+
+      const lifecycleManager = new ServiceLifecycleManager({
+        supervisor: mockSupervisor as unknown as ProcessSupervisor,
+        servicesDir: tempDir,
+        getServices: async () => [
+          {
+            manifest: { id: "crash-service", entry: "index.js" },
+            path: tempDir,
+          },
+        ],
+      });
+
+      let unexpectedExitCalled = false;
+      lifecycleManager.registerLifecycleHooks({
+        onUnexpectedExit: (serviceId) => {
+          expect(serviceId).toBe("crash-service");
+          unexpectedExitCalled = true;
+        },
+      });
+
+      // Start service
+      await lifecycleManager.startService("crash-service");
+
+      // Wait for the process exit handling (auto-exit after 50ms + processing time)
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify unexpected exit was detected
+      expect(unexpectedExitCalled).toBe(true);
+
+      // Verify service state was updated to error
+      const state = lifecycleManager.getServiceState("crash-service");
+      expect(state?.state).toBe("error");
+    });
+
+    it("should handle concurrent service starts and stops", async () => {
+      const mockSupervisor = createMockProcessSupervisor();
+      const lifecycleManager = new ServiceLifecycleManager({
+        supervisor: mockSupervisor as unknown as ProcessSupervisor,
+        servicesDir: tempDir,
+        getServices: async () => [
+          { manifest: { id: "concurrent-1", entry: "index.js" }, path: tempDir },
+          { manifest: { id: "concurrent-2", entry: "index.js" }, path: tempDir },
+          { manifest: { id: "concurrent-3", entry: "index.js" }, path: tempDir },
+        ],
+      });
+
+      // Start all services concurrently
+      const startPromises = [
+        lifecycleManager.startService("concurrent-1"),
+        lifecycleManager.startService("concurrent-2"),
+        lifecycleManager.startService("concurrent-3"),
+      ];
+
+      const instances = await Promise.all(startPromises);
+
+      // Verify all started
+      expect(instances.every((i) => i.state === "started")).toBe(true);
+      expect(lifecycleManager.listRunningServices()).toHaveLength(3);
+
+      // Stop all concurrently
+      const stopPromises = [
+        safeStopService(lifecycleManager, "concurrent-1"),
+        safeStopService(lifecycleManager, "concurrent-2"),
+        safeStopService(lifecycleManager, "concurrent-3"),
+      ];
+
+      await Promise.all(stopPromises);
+
+      // Verify all stopped
+      expect(lifecycleManager.listRunningServices()).toHaveLength(0);
+    });
+
+    it("should broadcast messages to specific services", async () => {
+      const mockSupervisor = createMockProcessSupervisor();
+      const lifecycleManager = new ServiceLifecycleManager({
+        supervisor: mockSupervisor as unknown as ProcessSupervisor,
+        servicesDir: tempDir,
+        getServices: async () => [
+          {
+            manifest: { id: "broadcast-service", entry: "index.js" },
+            path: tempDir,
+          },
+        ],
+      });
+
+      const scpLogger = {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+        child: vi.fn().mockReturnThis(),
+      } as unknown as ReturnType<typeof createSubsystemLogger>;
+
+      const scpServer = createSCPServer({
+        logger: scpLogger,
+      });
+
+      // Start and connect service
+      await lifecycleManager.startService("broadcast-service");
+
+      const mockSocket = new MockWebSocket();
+      scpServer.handleUpgrade(
+        {
+          url: "/__openclaw__/scp?serviceId=broadcast-service",
+          socket: { remoteAddress: "127.0.0.1" },
+        } as unknown as IncomingMessage,
+        mockSocket as unknown as WebSocket,
+      );
+
+      // Send started message
+      mockSocket.simulateMessage(
+        JSON.stringify(
+          createSCPMessage("service.started", "broadcast-service", {
+            name: "Broadcast Service",
+            version: "1.0.0",
+          }),
+        ),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Broadcast a message to the service
+      const broadcastMessage = {
+        type: "agent.stop-request",
+        serviceId: "broadcast-service",
+        requestId: `req-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        payload: { reason: "Maintenance", force: false },
+      };
+
+      const sent = scpServer.broadcastToService(
+        "broadcast-service",
+        broadcastMessage as SCPMessage,
+      );
+      expect(sent).toBe(true);
+
+      // Verify message was received
+      const received = mockSocket.sentMessages.find((msg) => {
+        const parsed = JSON.parse(msg);
+        return parsed.type === "agent.stop-request";
+      });
+      expect(received).toBeDefined();
+      expect(JSON.parse(received!).payload.reason).toBe("Maintenance");
+
+      // Try broadcasting to non-existent service
+      const notSent = scpServer.broadcastToService("non-existent", broadcastMessage as SCPMessage);
+      expect(notSent).toBe(false);
+
+      // Cleanup
+      await safeStopService(lifecycleManager, "broadcast-service");
+      await scpServer.close();
+    });
+
+    it("should provide accurate connection statistics", async () => {
+      const mockSupervisor = createMockProcessSupervisor();
+      const lifecycleManager = new ServiceLifecycleManager({
+        supervisor: mockSupervisor as unknown as ProcessSupervisor,
+        servicesDir: tempDir,
+        getServices: async () => [
+          { manifest: { id: "stats-1", entry: "index.js" }, path: tempDir },
+          { manifest: { id: "stats-2", entry: "index.js" }, path: tempDir },
+        ],
+      });
+
+      const scpLogger = {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+        child: vi.fn().mockReturnThis(),
+      } as unknown as ReturnType<typeof createSubsystemLogger>;
+
+      const scpServer = createSCPServer({
+        logger: scpLogger,
+      });
+
+      // Initial stats should be empty
+      let stats = scpServer.getConnectionStats();
+      expect(stats.totalConnections).toBe(0);
+      expect(stats.services.size).toBe(0);
+
+      // Start and connect services
+      await lifecycleManager.startService("stats-1");
+      await lifecycleManager.startService("stats-2");
+
+      const mockSocket1 = new MockWebSocket();
+      const mockSocket2 = new MockWebSocket();
+
+      scpServer.handleUpgrade(
+        {
+          url: "/__openclaw__/scp?serviceId=stats-1",
+          socket: { remoteAddress: "127.0.0.1" },
+        } as unknown as IncomingMessage,
+        mockSocket1 as unknown as WebSocket,
+      );
+      scpServer.handleUpgrade(
+        {
+          url: "/__openclaw__/scp?serviceId=stats-2",
+          socket: { remoteAddress: "127.0.0.1" },
+        } as unknown as IncomingMessage,
+        mockSocket2 as unknown as WebSocket,
+      );
+
+      // Stats should show both connections
+      stats = scpServer.getConnectionStats();
+      expect(stats.totalConnections).toBe(2);
+      expect(stats.services.has("stats-1")).toBe(true);
+      expect(stats.services.has("stats-2")).toBe(true);
+
+      // Close one connection
+      mockSocket1.close();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Stats should be updated
+      stats = scpServer.getConnectionStats();
+      expect(stats.totalConnections).toBe(1);
+      expect(stats.services.has("stats-1")).toBe(false);
+      expect(stats.services.has("stats-2")).toBe(true);
+
+      // Cleanup
+      await safeStopService(lifecycleManager, "stats-1");
+      await safeStopService(lifecycleManager, "stats-2");
+      await scpServer.close();
+    });
+  });
+
+  // ===========================================================================
+  // Tool Invocation Integration Tests
+  // ===========================================================================
+
+  describe("Tool Invocation Integration", () => {
+    it("should invoke tools through agent integration", async () => {
+      const toolCalls: Array<{ toolName: string; params: Record<string, unknown> }> = [];
+
+      const mockToolInvoker = async (toolName: string, params: Record<string, unknown>) => {
+        toolCalls.push({ toolName, params });
+        return {
+          content: [{ type: "text" as const, text: `Executed ${toolName}` }],
+          details: { result: `Executed ${toolName}` },
+        };
+      };
+
+      const { createAgentIntegration } = await import("./agent-integration.js");
+      const agentIntegration = createAgentIntegration({
+        toolInvoker: mockToolInvoker,
+      });
+
+      const message = {
+        type: "service.action" as const,
+        serviceId: "tool-test-service",
+        requestId: "req-123",
+        timestamp: new Date().toISOString(),
+        payload: {
+          action: "create-task",
+          params: { title: "Test Task", description: "Test" },
+        },
+      };
+
+      const connection = {
+        serviceId: "tool-test-service",
+        socket: { readyState: 1, send: vi.fn() } as unknown as WebSocket,
+        connId: "conn-123",
+        connectedAt: new Date(),
+      };
+
+      const response = await agentIntegration.handleServiceAction(message, connection);
+
+      expect(response.type).toBe("agent.response");
+      expect(response.payload.success).toBe(true);
+      expect(toolCalls).toHaveLength(1);
+      expect(toolCalls[0].toolName).toBe("task_create");
+    });
+
+    it("should handle tool invocation errors gracefully", async () => {
+      const mockToolInvoker = async () => {
+        throw new Error("Tool execution failed");
+      };
+
+      const { createAgentIntegration } = await import("./agent-integration.js");
+      const agentIntegration = createAgentIntegration({
+        toolInvoker: mockToolInvoker,
+      });
+
+      const message = {
+        type: "service.action" as const,
+        serviceId: "tool-error-service",
+        requestId: "req-456",
+        timestamp: new Date().toISOString(),
+        payload: {
+          action: "create-task",
+          params: { title: "Test Task" },
+        },
+      };
+
+      const connection = {
+        serviceId: "tool-error-service",
+        socket: { readyState: 1, send: vi.fn() } as unknown as WebSocket,
+        connId: "conn-456",
+        connectedAt: new Date(),
+      };
+
+      const response = await agentIntegration.handleServiceAction(message, connection);
+
+      expect(response.type).toBe("agent.response");
+      expect(response.payload.success).toBe(false);
+      expect(response.payload.error?.message).toContain("Tool execution failed");
     });
   });
 });

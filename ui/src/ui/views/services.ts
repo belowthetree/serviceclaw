@@ -81,6 +81,7 @@ export type ServicesViewProps = {
   onServiceEnable?: (serviceId: string) => void;
   onServiceDisable?: (serviceId: string) => void;
   onServiceConfigure?: (serviceId: string) => void;
+  onServiceRun?: (serviceId: string) => void;
   onServiceSubmit?: (detail: { serviceId: string; config: Record<string, unknown> }) => void;
   onServiceCancel?: () => void;
 };
@@ -180,6 +181,20 @@ export function renderServicesView(props: ServicesViewProps): TemplateResult {
                 </button>
               `
                 : nothing
+          }
+          ${
+            service.state === "enabled" && props.onServiceRun
+              ? html`
+              <button
+                class="btn btn-primary"
+                @click=${() => props.onServiceRun?.(service.id)}
+                ?disabled=${props.loading}
+                title="Run service"
+              >
+                Run
+              </button>
+            `
+              : nothing
           }
           <button
             class="btn btn-secondary"

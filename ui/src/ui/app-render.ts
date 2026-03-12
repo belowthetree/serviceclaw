@@ -960,6 +960,21 @@ export function renderApp(state: AppViewState) {
                 error: state.servicesError,
                 onServiceEnable: (serviceId) => state.enableService(serviceId),
                 onServiceDisable: (serviceId) => state.disableService(serviceId),
+                onServiceRun: (serviceId) => {
+                  console.log("[app-render] onServiceRun clicked:", serviceId);
+                  const service = state.services.find(s => s.id === serviceId);
+                  if (service) {
+                    console.log("[app-render] Found service, importing lifecycle-sync...");
+                    import("../services/lifecycle-sync.js").then(({ openServiceModal }) => {
+                      console.log("[app-render] lifecycle-sync imported, calling openServiceModal...");
+                      openServiceModal(serviceId, service.name, undefined as unknown as import("../../../src/services/lifecycle.js").ServiceLifecycleManager);
+                    }).catch(err => {
+                      console.error("[app-render] Failed to open service modal:", err);
+                    });
+                  } else {
+                    console.error("[app-render] Service not found:", serviceId);
+                  }
+                },
                 onServiceConfigure: (serviceId) => {
                   console.log("Configure service:", serviceId);
                 },

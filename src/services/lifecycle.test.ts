@@ -1,7 +1,8 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import type { CronService } from "../cron/service.js";
 import { clearInternalHooks } from "../hooks/internal-hooks.js";
 import type { PluginRegistry } from "../plugins/registry.js";
+import type { ProcessSupervisor, ManagedRun } from "../process/supervisor/types.js";
 import {
   Service,
   ServiceInstaller,
@@ -10,8 +11,20 @@ import {
   ServiceValidationError,
   ServiceStateError,
   type ServiceLifecycleDeps,
+  ServiceLifecycleManager,
+  ServiceLifecycleError,
+  ServiceNotFoundError,
+  InvalidProcessStateError,
+  createServiceLifecycleManager,
+  getServiceLifecycleManager,
+  resetServiceLifecycleManager,
+  setServiceLifecycleManager,
+  type LifecycleHooks,
 } from "./lifecycle.js";
-import type { ServiceManifest, ServiceConfig } from "./schema.js";
+import type { ServiceManifest } from "./schema.js";
+
+// Type for service config (not exported from schema.js)
+type ServiceConfig = Record<string, unknown>;
 
 // =============================================================================
 // Test Fixtures
@@ -52,6 +65,7 @@ const baseManifest: ServiceManifest = {
   name: "Test Service",
   description: "A test service for unit testing",
   version: "1.0.0",
+  entry: "index.js",
   author: "Test",
   category: "custom",
   trigger: {
@@ -852,5 +866,544 @@ describe("Service Lifecycle Integration", () => {
     expect(transitions).toContain("installing→installed");
     expect(transitions).toContain("installed→enabled");
     expect(transitions).toContain("enabled→disabled");
+  });
+});
+
+// =============================================================================
+// ServiceLifecycleManager Tests (Process Lifecycle)
+// =============================================================================
+
+describe("ServiceLifecycleManager", () => {
+  let manager: ServiceLifecycleManager;
+  let mockSupervisor: ProcessSupervisor;
+
+  const createMockManagedRun = (pid = 12345): ManagedRun => {
+    let waitResolve: ((value: Awaited<ReturnType<ManagedRun["wait"]>>) => void) | undefined;
+    const waitPromise = new Promise<Awaited<ReturnType<ManagedRun["wait"]>>>((resolve) => {
+      waitResolve = resolve;
+    });
+
+    return {
+      runId: `test-run-${pid}`,
+      pid,
+      startedAtMs: Date.now(),
+      wait: vi.fn().mockReturnValue(waitPromise),
+      cancel: vi.fn().mockImplementation(() => {
+        waitResolve?.({
+          reason: "exit" as const,
+          exitCode: 0,
+          exitSignal: null,
+          durationMs: 1000,
+          stdout: "",
+          stderr: "",
+          timedOut: false,
+          noOutputTimedOut: false,
+        });
+      }),
+    };
+  };
+
+  const createMockService = (id: string, entry = "index.js") => ({
+    manifest: { id, entry },
+    path: `/mock/services/${id}`,
+  });
+
+  beforeEach(() => {
+    mockSupervisor = {
+      spawn: vi.fn(),
+      cancel: vi.fn(),
+      cancelScope: vi.fn(),
+      reconcileOrphans: vi.fn(),
+      getRecord: vi.fn(),
+    } as unknown as ProcessSupervisor;
+
+    const mockGetServices = vi
+      .fn()
+      .mockResolvedValue([
+        createMockService("test-service"),
+        createMockService("service-1"),
+        createMockService("service-2"),
+      ]);
+
+    manager = new ServiceLifecycleManager({
+      supervisor: mockSupervisor,
+      sessionId: "test-session",
+      backendId: "test-backend",
+      getServices: mockGetServices as (
+        servicesDir?: string,
+      ) => Promise<Array<{ manifest: { id: string; entry: string }; path: string }>>,
+    });
+  });
+
+  afterEach(async () => {
+    await manager.dispose();
+  });
+
+  describe("Constructor", () => {
+    it("should create manager with default dependencies", () => {
+      const defaultManager = new ServiceLifecycleManager();
+      expect(defaultManager).toBeInstanceOf(ServiceLifecycleManager);
+    });
+
+    it("should create manager with custom dependencies", () => {
+      const customManager = new ServiceLifecycleManager({
+        supervisor: mockSupervisor,
+        sessionId: "custom-session",
+        backendId: "custom-backend",
+      });
+      expect(customManager).toBeInstanceOf(ServiceLifecycleManager);
+    });
+  });
+
+  describe("startService", () => {
+    it("should start a service and return instance", async () => {
+      const mockRun = createMockManagedRun(12345);
+      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+
+      const instance = await manager.startService("test-service");
+
+      expect(instance).toBeDefined();
+      expect(instance.serviceId).toBe("test-service");
+      expect(instance.state).toBe("started");
+      expect(instance.pid).toBe(12345);
+      expect(instance.startedAt).toBeInstanceOf(Date);
+    });
+
+    it("should throw if service is already started", async () => {
+      const mockRun = createMockManagedRun(12345);
+      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+
+      await manager.startService("test-service");
+
+      await expect(manager.startService("test-service")).rejects.toThrow(ServiceLifecycleError);
+    });
+
+    it("should throw if service is already started", async () => {
+      const mockRun = createMockManagedRun(12345);
+      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+
+      await manager.startService("test-service");
+
+      await expect(manager.startService("test-service")).rejects.toThrow(ServiceLifecycleError);
+    });
+
+    it("should call ProcessSupervisor.spawn with correct arguments", async () => {
+      const mockRun = createMockManagedRun(12345);
+      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+
+      await manager.startService("test-service");
+
+      expect(mockSupervisor.spawn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mode: "child",
+          argv: expect.arrayContaining(["node"]),
+          sessionId: "test-session",
+          backendId: "test-backend",
+          scopeKey: "service:test-service",
+          replaceExistingScope: true,
+        }),
+      );
+    });
+
+    it("should transition through starting state", async () => {
+      const mockRun = createMockManagedRun(12345);
+      const states: string[] = [];
+
+      manager.registerLifecycleHooks({
+        onStateChange: (serviceId, oldState, newState) => {
+          states.push(`${oldState}→${newState}`);
+        },
+      });
+
+      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+
+      await manager.startService("test-service");
+
+      expect(states).toContain("inactive→starting");
+      expect(states).toContain("starting→started");
+    });
+
+    it("should transition to error state on spawn failure", async () => {
+      vi.mocked(mockSupervisor.spawn).mockRejectedValue(new Error("Spawn failed"));
+
+      await expect(manager.startService("test-service")).rejects.toThrow(ServiceLifecycleError);
+
+      const instance = manager.getServiceState("test-service");
+      expect(instance?.state).toBe("error");
+      expect(instance?.error).toContain("Spawn failed");
+    });
+  });
+
+  describe("stopService", () => {
+    it("should stop a running service", async () => {
+      const mockRun = createMockManagedRun(12345);
+      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+
+      await manager.startService("test-service");
+      await manager.stopService("test-service");
+
+      const instance = manager.getServiceState("test-service");
+      expect(instance?.state).toBe("stopped");
+      expect(mockRun.cancel).toHaveBeenCalled();
+    });
+
+    it("should throw if service not found", async () => {
+      await expect(manager.stopService("non-existent")).rejects.toThrow(ServiceNotFoundError);
+    });
+
+    it("should throw if service is not running", async () => {
+      await expect(manager.stopService("test-service")).rejects.toThrow(ServiceLifecycleError);
+    });
+
+    it("should transition through stopping state", async () => {
+      const mockRun = createMockManagedRun(12345);
+      const states: string[] = [];
+
+      manager.registerLifecycleHooks({
+        onStateChange: (serviceId, oldState, newState) => {
+          states.push(`${oldState}→${newState}`);
+        },
+      });
+
+      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+
+      await manager.startService("test-service");
+      await manager.stopService("test-service");
+
+      expect(states).toContain("started→stopping");
+      expect(states).toContain("stopping→stopped");
+    });
+  });
+
+  describe("getServiceState", () => {
+    it("should return undefined for non-existent service", () => {
+      expect(manager.getServiceState("non-existent")).toBeUndefined();
+    });
+
+    it("should return instance for running service", async () => {
+      const mockRun = createMockManagedRun(12345);
+      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+
+      await manager.startService("test-service");
+
+      const instance = manager.getServiceState("test-service");
+      expect(instance).toBeDefined();
+      expect(instance?.serviceId).toBe("test-service");
+      expect(instance?.state).toBe("started");
+    });
+  });
+
+  describe("listRunningServices", () => {
+    it("should return empty array when no services running", () => {
+      expect(manager.listRunningServices()).toEqual([]);
+    });
+
+    it("should return running services only", async () => {
+      const mockRun1 = createMockManagedRun(12345);
+      const mockRun2 = createMockManagedRun(12346);
+
+      vi.mocked(mockSupervisor.spawn)
+        .mockResolvedValueOnce(mockRun1)
+        .mockResolvedValueOnce(mockRun2);
+
+      await manager.startService("service-1");
+      await manager.startService("service-2");
+
+      const running = manager.listRunningServices();
+      expect(running).toHaveLength(2);
+      expect(running.map((s) => s.serviceId)).toContain("service-1");
+      expect(running.map((s) => s.serviceId)).toContain("service-2");
+    });
+
+    it("should not include stopped services", async () => {
+      const mockRun = createMockManagedRun(12345);
+      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+
+      await manager.startService("test-service");
+      await manager.stopService("test-service");
+
+      expect(manager.listRunningServices()).toHaveLength(0);
+    });
+  });
+
+  describe("listAllServices", () => {
+    it("should return all services including stopped", async () => {
+      const mockRun = createMockManagedRun(12345);
+      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+
+      await manager.startService("test-service");
+      await manager.stopService("test-service");
+
+      const all = manager.listAllServices();
+      expect(all).toHaveLength(1);
+      expect(all[0]?.state).toBe("stopped");
+    });
+  });
+
+  describe("isRunning", () => {
+    it("should return false for non-existent service", () => {
+      expect(manager.isRunning("non-existent")).toBe(false);
+    });
+
+    it("should return true for started service", async () => {
+      const mockRun = createMockManagedRun(12345);
+      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+
+      await manager.startService("test-service");
+
+      expect(manager.isRunning("test-service")).toBe(true);
+    });
+
+    it("should return false for stopped service", async () => {
+      const mockRun = createMockManagedRun(12345);
+      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+
+      await manager.startService("test-service");
+      await manager.stopService("test-service");
+
+      expect(manager.isRunning("test-service")).toBe(false);
+    });
+  });
+
+  describe("registerLifecycleHooks", () => {
+    it("should register hooks and return unregister function", () => {
+      const hooks: LifecycleHooks = {
+        onStart: vi.fn(),
+        onStop: vi.fn(),
+      };
+
+      const unregister = manager.registerLifecycleHooks(hooks);
+      expect(typeof unregister).toBe("function");
+
+      // Unregister should work
+      unregister();
+    });
+
+    it("should call onStart hook when service starts", async () => {
+      const onStart = vi.fn();
+      const mockRun = createMockManagedRun(12345);
+
+      manager.registerLifecycleHooks({ onStart });
+      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+
+      await manager.startService("test-service");
+
+      expect(onStart).toHaveBeenCalledWith(
+        "test-service",
+        expect.objectContaining({
+          serviceId: "test-service",
+          state: "started",
+        }),
+      );
+    });
+
+    it("should call onStop hook when service stops", async () => {
+      const onStop = vi.fn();
+      const mockRun = createMockManagedRun(12345);
+
+      manager.registerLifecycleHooks({ onStop });
+      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+
+      await manager.startService("test-service");
+      await manager.stopService("test-service");
+
+      expect(onStop).toHaveBeenCalledWith(
+        "test-service",
+        expect.objectContaining({
+          serviceId: "test-service",
+          state: "stopped",
+        }),
+      );
+    });
+
+    it("should call onStateChange on state transitions", async () => {
+      const onStateChange = vi.fn();
+      const mockRun = createMockManagedRun(12345);
+
+      manager.registerLifecycleHooks({ onStateChange });
+      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+
+      await manager.startService("test-service");
+
+      expect(onStateChange).toHaveBeenCalledWith(
+        "test-service",
+        "inactive",
+        "starting",
+        expect.any(Object),
+      );
+      expect(onStateChange).toHaveBeenCalledWith(
+        "test-service",
+        "starting",
+        "started",
+        expect.any(Object),
+      );
+    });
+
+    it("should call onStdout hook on stdout output", async () => {
+      const onStdout = vi.fn();
+      let capturedStdout: ((chunk: string) => void) | undefined;
+
+      vi.mocked(mockSupervisor.spawn).mockImplementation(async (input) => {
+        capturedStdout = input.onStdout;
+        return createMockManagedRun(12345);
+      });
+
+      manager.registerLifecycleHooks({ onStdout });
+      await manager.startService("test-service");
+
+      capturedStdout?.("test output");
+
+      expect(onStdout).toHaveBeenCalledWith("test-service", "test output");
+    });
+
+    it("should call onStderr hook on stderr output", async () => {
+      const onStderr = vi.fn();
+      let capturedStderr: ((chunk: string) => void) | undefined;
+
+      vi.mocked(mockSupervisor.spawn).mockImplementation(async (input) => {
+        capturedStderr = input.onStderr;
+        return createMockManagedRun(12345);
+      });
+
+      manager.registerLifecycleHooks({ onStderr });
+      await manager.startService("test-service");
+
+      capturedStderr?.("test error");
+
+      expect(onStderr).toHaveBeenCalledWith("test-service", "test error");
+    });
+  });
+
+  describe("stopAllServices", () => {
+    it("should stop all running services", async () => {
+      const mockRun1 = createMockManagedRun(12345);
+      const mockRun2 = createMockManagedRun(12346);
+
+      vi.mocked(mockSupervisor.spawn)
+        .mockResolvedValueOnce(mockRun1)
+        .mockResolvedValueOnce(mockRun2);
+
+      await manager.startService("service-1");
+      await manager.startService("service-2");
+
+      await manager.stopAllServices();
+
+      expect(manager.listRunningServices()).toHaveLength(0);
+    });
+
+    it("should handle errors when stopping services", async () => {
+      const mockRun = createMockManagedRun(12345);
+      mockRun.cancel = vi.fn().mockImplementation(() => {
+        throw new Error("Cancel failed");
+      });
+
+      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+
+      await manager.startService("test-service");
+
+      // Should not throw
+      await expect(manager.stopAllServices()).resolves.not.toThrow();
+    });
+  });
+
+  describe("cleanupStoppedServices", () => {
+    it("should remove stopped services from memory", async () => {
+      const mockRun = createMockManagedRun(12345);
+      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+
+      await manager.startService("test-service");
+      await manager.stopService("test-service");
+
+      expect(manager.listAllServices()).toHaveLength(1);
+
+      manager.cleanupStoppedServices();
+
+      expect(manager.listAllServices()).toHaveLength(0);
+    });
+
+    it("should not remove running services", async () => {
+      const mockRun = createMockManagedRun(12345);
+      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+
+      await manager.startService("test-service");
+      manager.cleanupStoppedServices();
+
+      expect(manager.getServiceState("test-service")).toBeDefined();
+    });
+  });
+
+  describe("dispose", () => {
+    it("should stop all services and clear state", async () => {
+      const mockRun = createMockManagedRun(12345);
+      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+
+      await manager.startService("test-service");
+      await manager.dispose();
+
+      expect(manager.listAllServices()).toHaveLength(0);
+    });
+  });
+
+  describe("Error Classes", () => {
+    describe("ServiceLifecycleError", () => {
+      it("should create error with serviceId", () => {
+        const error = new ServiceLifecycleError("Test error", "service-1");
+        expect(error.message).toBe("Test error");
+        expect(error.serviceId).toBe("service-1");
+        expect(error.name).toBe("ServiceLifecycleError");
+      });
+
+      it("should include cause", () => {
+        const cause = new Error("Original error");
+        const error = new ServiceLifecycleError("Test error", "service-1", cause);
+        expect(error.cause).toBe(cause);
+      });
+    });
+
+    describe("ServiceNotFoundError", () => {
+      it("should create not found error", () => {
+        const error = new ServiceNotFoundError("service-1");
+        expect(error.message).toBe("Service not found: service-1");
+        expect(error.serviceId).toBe("service-1");
+        expect(error.name).toBe("ServiceNotFoundError");
+      });
+    });
+
+    describe("InvalidProcessStateError", () => {
+      it("should create state error with transition info", () => {
+        const error = new InvalidProcessStateError("service-1", "started", "starting");
+        expect(error.message).toContain("Invalid state transition from started to starting");
+        expect(error.serviceId).toBe("service-1");
+        expect(error.currentState).toBe("started");
+        expect(error.attemptedState).toBe("starting");
+        expect(error.name).toBe("InvalidProcessStateError");
+      });
+    });
+  });
+
+  describe("Factory Functions", () => {
+    it("createServiceLifecycleManager should create new instance", () => {
+      const instance = createServiceLifecycleManager();
+      expect(instance).toBeInstanceOf(ServiceLifecycleManager);
+    });
+
+    it("getServiceLifecycleManager should return singleton", () => {
+      const instance1 = getServiceLifecycleManager();
+      const instance2 = getServiceLifecycleManager();
+      expect(instance1).toBe(instance2);
+    });
+
+    it("resetServiceLifecycleManager should reset singleton", () => {
+      const instance1 = getServiceLifecycleManager();
+      resetServiceLifecycleManager();
+      const instance2 = getServiceLifecycleManager();
+      expect(instance1).not.toBe(instance2);
+    });
+
+    it("setServiceLifecycleManager should set custom singleton", () => {
+      const customManager = new ServiceLifecycleManager();
+      setServiceLifecycleManager(customManager);
+      expect(getServiceLifecycleManager()).toBe(customManager);
+    });
   });
 });

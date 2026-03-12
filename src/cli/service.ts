@@ -335,7 +335,7 @@ async function installService(source: string, options: ServiceInstallOptions): P
     defaultRuntime.log(`${theme.success("✓")} Installed service: ${theme.command(service.id)}`);
     defaultRuntime.log(`  Name: ${service.manifest.name}`);
     defaultRuntime.log(`  Description: ${service.manifest.description}`);
-    defaultRuntime.log(`  Trigger: ${service.manifest.trigger.type}`);
+    defaultRuntime.log(`  Trigger: ${service.manifest.trigger?.type ?? "none"}`);
 
     // Enable if requested
     if (options.enable) {
@@ -488,7 +488,7 @@ async function showServiceStatus(serviceId: string): Promise<void> {
   lines.push(`${theme.muted("Description:")} ${service.manifest.description}`);
   lines.push("");
 
-  lines.push(`${theme.muted("Trigger:")} ${service.manifest.trigger.type}`);
+  lines.push(`${theme.muted("Trigger:")} ${service.manifest.trigger?.type ?? "none"}`);
   lines.push(`${theme.muted("Agent ID:")} ${service.runtimeRefs.agentId}`);
   lines.push("");
 

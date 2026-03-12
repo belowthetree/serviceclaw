@@ -24,6 +24,18 @@ export default defineConfig(() => {
   return {
     base,
     publicDir: path.resolve(here, "public"),
+    resolve: {
+      alias: [
+        {
+          find: /\.\.\/services\/lifecycle-sync\.js$/,
+          replacement: "../services/lifecycle-sync.browser.ts",
+        },
+        {
+          find: /\.\.\/services\/lifecycle-sync$/,
+          replacement: "../services/lifecycle-sync.browser.ts",
+        },
+      ],
+    },
     optimizeDeps: {
       include: ["lit/directives/repeat.js"],
     },

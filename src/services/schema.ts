@@ -1,37 +1,16 @@
-/**
- * Service Manifest JSON Schema
- *
- * Defines the complete schema for Service manifests (service.json) in OpenClaw.
- * Services are declarative automations that bundle skills, tools, and triggers
- * to provide user-friendly "set and forget" automation.
- *
- * @see docs/services/architecture.md
- * @see docs/services/examples.md
- */
+import { z } from "zod";
 
-import { Type, type Static } from "@sinclair/typebox";
-import { stringEnum } from "../agents/schema/typebox.js";
+export const ServiceCapabilityEnum = [
+  "webhook",
+  "cron",
+  "message",
+  "web",
+  "network",
+  "filesystem",
+  "shell",
+  "browser",
+] as const;
 
-// =============================================================================
-// JSON Value Type (recursive type for any valid JSON)
-// =============================================================================
-
-const JsonValue = Type.Recursive((Self) =>
-  Type.Union([
-    Type.String(),
-    Type.Number(),
-    Type.Boolean(),
-    Type.Null(),
-    Type.Array(Self),
-    Type.Record(Type.String(), Self),
-  ]),
-);
-
-// =============================================================================
-// Enums and Constants
-// =============================================================================
-
-/** Valid service categories for grouping */
 export const ServiceCategories = [
   "productivity",
   "communication",
@@ -41,606 +20,208 @@ export const ServiceCategories = [
   "custom",
 ] as const;
 
-/** Valid trigger types */
-export const TriggerTypes = ["cron", "webhook", "message", "web"] as const;
+const kebabCasePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const semverPattern = /^\d+\.\d+\.\d+(?:-[\w.]+)?$/;
+const relativePathPattern = /^(?!\/)((?!\.\/).)*$/;
 
-/** Valid config field types (JSON Schema types + OpenClaw extensions) */
-export const ConfigFieldTypes = [
-  "string",
-  "number",
-  "boolean",
-  "array",
-  "object",
-  "secret",
-] as const;
+export const UISchema = z.object({
+  entry: z.string().regex(relativePathPattern, "Entry must be a relative path").optional(),
+});
 
-/** Valid webhook auth types */
-export const WebhookAuthTypes = ["none", "token", "hmac", "signature"] as const;
-
-/** Valid session targets */
-export const SessionTargets = ["main", "isolated"] as const;
-
-/** Valid backoff strategies */
-export const BackoffStrategies = ["fixed", "linear", "exponential"] as const;
-
-/** Valid match types for message triggers */
-export const MatchTypes = ["keyword", "regex", "command", "attachment"] as const;
-
-/** Valid response modes */
-export const ResponseModes = ["thread", "dm", "channel", "silent"] as const;
-
-/** Valid widget types for dashboard service */
-export const WidgetTypes = [
-  "weather",
-  "tasks",
-  "calendar",
-  "clock",
-  "text",
-  "chart",
-  "list",
-] as const;
-
-// =============================================================================
 // Trigger Schemas
-// =============================================================================
 
-/** Cron trigger - scheduled execution */
-export const CronTriggerSchema = Type.Object(
-  {
-    type: Type.Literal("cron"),
-    schedule: Type.String({
-      description: "Cron expression (e.g., '0 8 * * *' for 8 AM daily)",
-      examples: ["0 8 * * *", "*/15 * * * *", "0 9 * * 1"],
-    }),
-    timezone: Type.Optional(
-      Type.String({
-        description: "IANA timezone or 'auto' for automatic detection",
-        default: "auto",
-        examples: ["auto", "America/New_York", "Europe/London"],
-      }),
-    ),
-  },
-  { description: "Cron-based scheduled trigger" },
-);
+export const CronTriggerSchema = z.object({
+  type: z.literal("cron"),
+  schedule: z.string(),
+  timezone: z.string().optional(),
+});
 
-/** Webhook trigger - HTTP endpoint */
-export const WebhookTriggerSchema = Type.Object(
-  {
-    type: Type.Literal("webhook"),
-    path: Type.String({
-      description: "URL path for the webhook endpoint (e.g., '/webhooks/github')",
-      examples: ["/webhooks/github", "/webhooks/stripe"],
-    }),
-    methods: Type.Optional(
-      Type.Array(Type.String(), {
-        description: "HTTP methods to accept",
-        default: ["POST"],
-        examples: [["POST"], ["POST", "PUT"]],
-      }),
-    ),
-    auth: Type.Optional(
-      Type.Object(
-        {
-          type: stringEnum(WebhookAuthTypes, {
-            description: "Authentication type for webhook requests",
-            default: "none",
-          }),
-          header: Type.Optional(
-            Type.String({
-              description: "Header name for auth token/signature",
-              examples: ["X-Webhook-Signature", "Authorization"],
-            }),
-          ),
-          secret: Type.Optional(
-            Type.String({
-              description: "Reference to stored secret (not the actual secret)",
-            }),
-          ),
-        },
-        { description: "Webhook authentication configuration" },
-      ),
-    ),
-  },
-  { description: "HTTP webhook trigger" },
-);
+export const WebhookTriggerAuthSchema = z.object({
+  type: z.enum(["none", "token", "hmac", "signature"]),
+  secret: z.string().optional(),
+  token: z.string().optional(),
+  header: z.string().optional(),
+});
 
-/** Message trigger - channel message events */
-export const MessageTriggerSchema = Type.Object(
-  {
-    type: Type.Literal("message"),
-    channels: Type.Array(Type.String(), {
-      description: "Channel types to monitor (e.g., 'slack', 'discord', 'telegram')",
-      examples: [["slack"], ["discord", "telegram"]],
-    }),
-    filters: Type.Optional(
-      Type.Object(
-        {
-          patterns: Type.Optional(
-            Type.Array(Type.String(), {
-              description: "Regex patterns to match message content",
-            }),
-          ),
-          keywords: Type.Optional(
-            Type.Array(Type.String(), {
-              description: "Keywords to watch for in messages",
-            }),
-          ),
-          fromUsers: Type.Optional(
-            Type.Array(Type.String(), {
-              description: "Specific user IDs to monitor",
-            }),
-          ),
-          hasAttachments: Type.Optional(
-            Type.Boolean({
-              description: "Only trigger on messages with attachments",
-            }),
-          ),
-        },
-        { description: "Message filtering criteria" },
-      ),
-    ),
-  },
-  { description: "Message-based trigger for channel events" },
-);
+export const WebhookTriggerSchema = z.object({
+  type: z.literal("webhook"),
+  path: z.string(),
+  methods: z.array(z.string()).optional(),
+  auth: WebhookTriggerAuthSchema.optional(),
+});
 
-/** Web UI trigger - dashboard/web page */
-export const WebUITriggerSchema = Type.Object(
-  {
-    type: Type.Literal("web"),
-    path: Type.String({
-      description: "URL path for the dashboard/web page",
-      examples: ["/dashboards/my-dashboard", "/services/status"],
-    }),
-    auth: Type.Optional(
-      stringEnum(["gateway", "public", "password"], {
-        description: "Authentication mode for web access",
-        default: "gateway",
-      }),
-    ),
-  },
-  { description: "Web UI/dashboard trigger" },
-);
+export const MessageTriggerFiltersSchema = z.object({
+  keywords: z.array(z.string()).optional(),
+  patterns: z.array(z.string()).optional(),
+  fromUsers: z.array(z.string()).optional(),
+  hasAttachments: z.boolean().optional(),
+});
 
-/** Union of all trigger types */
-export const ServiceTriggerSchema = Type.Union([
+export const MessageTriggerSchema = z.object({
+  type: z.literal("message"),
+  channels: z.array(z.string()),
+  filters: MessageTriggerFiltersSchema.optional(),
+});
+
+export const WebTriggerSchema = z.object({
+  type: z.literal("web"),
+  path: z.string().optional(),
+});
+
+export const TriggerSchema = z.discriminatedUnion("type", [
   CronTriggerSchema,
   WebhookTriggerSchema,
   MessageTriggerSchema,
-  WebUITriggerSchema,
+  WebTriggerSchema,
 ]);
 
-// =============================================================================
+export const TriggerTypeSchema = z.enum(["cron", "webhook", "message", "web"]);
+
+// Execution and Requirements Schemas
+
+export const ServiceExecutionConfigSchema = z.object({
+  agentId: z.string().optional(),
+  timeout: z.number().optional(),
+  retries: z.number().optional(),
+  concurrent: z.boolean().optional(),
+  sessionTarget: z.string().optional(),
+  retryPolicy: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const ServiceRequirementsSchema = z.object({
+  skills: z.array(z.string()).optional(),
+  optionalSkills: z.array(z.string()).optional(),
+  tools: z.array(z.string()).optional(),
+  optionalTools: z.array(z.string()).optional(),
+  services: z.array(z.string()).optional(),
+  env: z.array(z.string()).optional(),
+  config: z.array(z.string()).optional(),
+});
+
 // Config Field Schema
-// =============================================================================
 
-/** OpenClaw UI extensions for config fields */
-export const ConfigFieldExtensionsSchema = Type.Object(
-  {
-    inputType: Type.Optional(
-      stringEnum(
-        [
-          "text",
-          "select",
-          "multiselect",
-          "channel-picker",
-          "skill-picker",
-          "number",
-          "textarea",
-          "toggle",
-        ],
-        {
-          description: "UI input type hint",
-        },
-      ),
-    ),
-    dataSource: Type.Optional(
-      Type.Object(
-        {
-          skill: Type.Optional(Type.String()),
-          tool: Type.Optional(Type.String()),
-          config: Type.Optional(Type.String()),
-        },
-        { description: "Dynamic data source for select options" },
-      ),
-    ),
-    validateOn: Type.Optional(
-      stringEnum(["blur", "change", "submit"], {
-        description: "When to validate the field",
-        default: "change",
-      }),
-    ),
-  },
-  { description: "OpenClaw UI extensions for config fields" },
-);
+export const ConfigFieldSchema = z.object({
+  type: z.enum(["string", "number", "boolean", "array", "object", "secret"]),
+  required: z.boolean().optional(),
+  default: z.unknown().optional(),
+  description: z.string().optional(),
+  enum: z.array(z.string()).optional(),
+  items: z.record(z.string(), z.unknown()).optional(),
+  properties: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
+  pattern: z.string().optional(),
+  minimum: z.number().optional(),
+  maximum: z.number().optional(),
+});
 
-/** Base configuration field schema */
-export const ServiceConfigFieldSchema = Type.Object(
-  {
-    type: stringEnum(ConfigFieldTypes, {
-      description: "Field data type",
-    }),
-    description: Type.String({
-      description: "Human-readable description of the field",
-    }),
-    required: Type.Optional(
-      Type.Boolean({
-        description: "Whether this field is required",
-        default: false,
-      }),
-    ),
-    default: Type.Optional(JsonValue),
-    // Type-specific properties
-    enum: Type.Optional(
-      Type.Array(Type.String(), {
-        description: "Allowed values for string type",
-      }),
-    ),
-    items: Type.Optional(JsonValue),
-    properties: Type.Optional(Type.Record(Type.String(), JsonValue)),
-    minimum: Type.Optional(Type.Number()),
-    maximum: Type.Optional(Type.Number()),
-    minLength: Type.Optional(Type.Number()),
-    maxLength: Type.Optional(Type.Number()),
-    pattern: Type.Optional(Type.String()),
-    // OpenClaw extensions
-    "x-openclaw": Type.Optional(ConfigFieldExtensionsSchema),
-  },
-  { description: "Service configuration field definition" },
-);
+export const ServiceConfigSchema = z.record(z.string(), ConfigFieldSchema);
 
-// =============================================================================
-// Requirements Schema
-// =============================================================================
+// Capabilities Schema (Object format with additional properties)
 
-/** Service requirements block */
-export const ServiceRequirementsSchema = Type.Object(
-  {
-    skills: Type.Optional(
-      Type.Array(Type.String(), {
-        description: "Required skill IDs",
-        examples: [["weather"], ["weather", "calendar"]],
-      }),
-    ),
-    optionalSkills: Type.Optional(
-      Type.Array(Type.String(), {
-        description: "Optional skills (service works with degraded functionality if unavailable)",
-      }),
-    ),
-    tools: Type.Optional(
-      Type.Array(Type.String(), {
-        description: "Required tool names",
-        examples: [["message.send"], ["web_fetch", "message.send"]],
-      }),
-    ),
-    optionalTools: Type.Optional(
-      Type.Array(Type.String(), {
-        description: "Optional tools",
-      }),
-    ),
-    env: Type.Optional(
-      Type.Array(Type.String(), {
-        description: "Required environment variables",
-        examples: [["OPENWEATHER_API_KEY"]],
-      }),
-    ),
-    config: Type.Optional(
-      Type.Array(Type.String(), {
-        description: "Required OpenClaw config paths",
-        examples: [["channels.slack"]],
-      }),
-    ),
-  },
-  { description: "Service capability requirements" },
-);
+export const ServiceCapabilitiesSchema = z.object({
+  network: z.boolean().optional(),
+  filesystem: z.boolean().optional(),
+  shell: z.boolean().optional(),
+  browser: z.boolean().optional(),
+  webhook: z.boolean().optional(),
+  cron: z.boolean().optional(),
+  message: z.boolean().optional(),
+  web: z.boolean().optional(),
+  privilegedTools: z.array(z.string()).optional(),
+  requiresConfirmation: z.array(z.string()).optional(),
+});
 
-// =============================================================================
-// Capabilities Schema (Security)
-// =============================================================================
+// Service Manifest Schema
 
-/** Service capabilities and security declarations */
-export const ServiceCapabilitiesSchema = Type.Object(
-  {
-    privilegedTools: Type.Optional(
-      Type.Array(Type.String(), {
-        description: "Tools that require explicit user confirmation",
-        examples: [["message.send"], ["message.send", "email.send"]],
-      }),
-    ),
-    requiresConfirmation: Type.Optional(
-      Type.Array(Type.String(), {
-        description: "Tools that will always prompt for user confirmation before execution",
-      }),
-    ),
-    network: Type.Optional(
-      Type.Boolean({
-        description: "Whether service requires internet access",
-        default: false,
-      }),
-    ),
-    filesystem: Type.Optional(
-      Type.Boolean({
-        description: "Whether service requires filesystem access",
-        default: false,
-      }),
-    ),
-    shell: Type.Optional(
-      Type.Boolean({
-        description: "Whether service requires shell command execution",
-        default: false,
-      }),
-    ),
-    browser: Type.Optional(
-      Type.Boolean({
-        description: "Whether service requires browser automation",
-        default: false,
-      }),
-    ),
-  },
-  { description: "Service security capabilities and permissions" },
-);
+export const ServiceManifestSchema = z.object({
+  id: z
+    .string()
+    .min(1, "Service ID cannot be empty")
+    .regex(kebabCasePattern, "Service ID should be kebab-case"),
 
-// =============================================================================
-// Execution Config Schema
-// =============================================================================
+  name: z.string(),
 
-/** Retry policy configuration */
-export const RetryPolicySchema = Type.Object(
-  {
-    maxRetries: Type.Number({
-      description: "Maximum number of retry attempts",
-      default: 3,
-      minimum: 0,
-      maximum: 10,
-    }),
-    backoff: stringEnum(BackoffStrategies, {
-      description: "Backoff strategy between retries",
-      default: "exponential",
-    }),
-    initialDelayMs: Type.Optional(
-      Type.Number({
-        description: "Initial delay before first retry (milliseconds)",
-        default: 1000,
-      }),
-    ),
-  },
-  { description: "Retry policy for failed executions" },
-);
+  version: z.string().regex(semverPattern, "Version must follow semver"),
 
-/** Service execution configuration */
-export const ServiceExecutionConfigSchema = Type.Object(
-  {
-    agentId: Type.Optional(
-      Type.String({
-        description: "Agent ID for execution (auto-generated if not specified)",
-        examples: ["service:daily-briefing"],
-      }),
-    ),
-    sessionTarget: Type.Optional(
-      stringEnum(SessionTargets, {
-        description: "Session isolation level",
-        default: "isolated",
-      }),
-    ),
-    timeout: Type.Optional(
-      Type.Number({
-        description: "Execution timeout in milliseconds",
-        default: 30000,
-        minimum: 1000,
-        maximum: 300000,
-      }),
-    ),
-    retryPolicy: Type.Optional(RetryPolicySchema),
-  },
-  { description: "Service execution settings" },
-);
+  description: z.string().optional(),
 
-// =============================================================================
-// Main Service Manifest Schema
-// =============================================================================
+  entry: z.string().regex(relativePathPattern, "Entry must be a relative path"),
 
-/** Service manifest schema - the complete service definition */
-export const ServiceManifestSchema = Type.Object(
-  {
-    $schema: Type.Optional(
-      Type.String({
-        description: "Schema URL for validation",
-        examples: ["https://openclaw.ai/schemas/service-v1.json"],
-      }),
-    ),
+  ui: UISchema.optional(),
 
-    // Identity
-    id: Type.String({
-      description: "Unique identifier for the service (kebab-case)",
-      examples: ["daily-briefing", "webhook-receiver", "message-processor"],
-      pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-    }),
-    name: Type.String({
-      description: "Human-readable name",
-      examples: ["Daily Briefing", "Webhook Receiver"],
-    }),
-    description: Type.String({
-      description: "What the service does",
-      examples: ["Your personalized morning briefing with weather, calendar, news, and tasks"],
-    }),
-    version: Type.String({
-      description: "Semver version",
-      examples: ["1.0.0", "2.1.3"],
-      pattern: "^\\d+\\.\\d+\\.\\d+(?:-[\\w.]+)?$",
-    }),
-    author: Type.Optional(
-      Type.String({
-        description: "Creator/organization",
-        examples: ["OpenClaw", "Your Name"],
-      }),
-    ),
-    category: Type.Optional(
-      stringEnum(ServiceCategories, {
-        description: "Category for grouping",
-        default: "custom",
-      }),
-    ),
+  capabilities: ServiceCapabilitiesSchema.optional(),
 
-    // Trigger configuration
-    trigger: ServiceTriggerSchema,
+  author: z.string().optional(),
 
-    // User configuration schema
-    config: Type.Record(Type.String(), ServiceConfigFieldSchema, {
-      description: "Configuration schema for user-customizable parameters",
-    }),
+  category: z.enum(ServiceCategories).optional(),
 
-    // Requirements
-    requires: ServiceRequirementsSchema,
+  trigger: TriggerSchema.optional(),
 
-    // Security capabilities
-    capabilities: ServiceCapabilitiesSchema,
+  execution: ServiceExecutionConfigSchema.optional(),
 
-    // Execution settings (optional)
-    execution: Type.Optional(ServiceExecutionConfigSchema),
-  },
-  {
-    description: "OpenClaw Service Manifest - declarative automation definition",
-    additionalProperties: false,
-  },
-);
+  requires: ServiceRequirementsSchema.optional(),
 
-// =============================================================================
-// TypeScript Types
-// =============================================================================
+  config: z.record(z.string(), ConfigFieldSchema).optional(),
+});
 
-/** Service category type */
+// Type Exports
+
+export type UIConfig = z.infer<typeof UISchema>;
+export type ServiceCapability = (typeof ServiceCapabilityEnum)[number];
 export type ServiceCategory = (typeof ServiceCategories)[number];
+export type ServiceManifest = z.infer<typeof ServiceManifestSchema>;
 
-/** Trigger type */
-export type TriggerType = (typeof TriggerTypes)[number];
+export type CronTrigger = z.infer<typeof CronTriggerSchema>;
+export type WebhookTrigger = z.infer<typeof WebhookTriggerSchema>;
+export type MessageTrigger = z.infer<typeof MessageTriggerSchema>;
+export type WebTrigger = z.infer<typeof WebTriggerSchema>;
+export type Trigger = z.infer<typeof TriggerSchema>;
+export type TriggerType = z.infer<typeof TriggerTypeSchema>;
 
-/** Config field type */
-export type ConfigFieldType = (typeof ConfigFieldTypes)[number];
-
-/** Webhook auth type */
-export type WebhookAuthType = (typeof WebhookAuthTypes)[number];
-
-/** Session target */
-export type SessionTarget = (typeof SessionTargets)[number];
-
-/** Backoff strategy */
-export type BackoffStrategy = (typeof BackoffStrategies)[number];
-
-/** Match type for message triggers */
-export type MatchType = (typeof MatchTypes)[number];
-
-/** Response mode */
-export type ResponseMode = (typeof ResponseModes)[number];
-
-/** Widget type */
-export type WidgetType = (typeof WidgetTypes)[number];
-
-/** Cron trigger */
-export type CronTrigger = Static<typeof CronTriggerSchema>;
-
-/** Webhook trigger */
-export type WebhookTrigger = Static<typeof WebhookTriggerSchema>;
-
-/** Message trigger */
-export type MessageTrigger = Static<typeof MessageTriggerSchema>;
-
-/** Web UI trigger */
-export type WebUITrigger = Static<typeof WebUITriggerSchema>;
-
-/** Service trigger union */
-export type ServiceTrigger = Static<typeof ServiceTriggerSchema>;
-
-/** Config field extensions */
-export type ConfigFieldExtensions = Static<typeof ConfigFieldExtensionsSchema>;
-
-/** Service config field */
-export type ServiceConfigField = Static<typeof ServiceConfigFieldSchema>;
-
-/** Service requirements */
-export type ServiceRequirements = Static<typeof ServiceRequirementsSchema>;
-
-/** Service capabilities */
-export type ServiceCapabilities = Static<typeof ServiceCapabilitiesSchema>;
-
-/** Retry policy */
-export type RetryPolicy = Static<typeof RetryPolicySchema>;
-
-/** Service execution config */
-export type ServiceExecutionConfig = Static<typeof ServiceExecutionConfigSchema>;
-
-/** Service manifest */
-export type ServiceManifest = Static<typeof ServiceManifestSchema>;
-
-/** Service configuration values (user-provided) */
 export type ServiceConfig = Record<string, unknown>;
+export type ServiceExecutionConfig = z.infer<typeof ServiceExecutionConfigSchema>;
+export type ServiceRequirements = z.infer<typeof ServiceRequirementsSchema>;
+export type ConfigField = z.infer<typeof ConfigFieldSchema>;
 
-// =============================================================================
-// Schema Export
-// =============================================================================
-
-/** JSON Schema representation of ServiceManifest */
-export const ServiceManifestJSONSchema = ServiceManifestSchema;
-
-/**
- * Validate a service manifest object against the schema.
- * Note: This is a type guard. Runtime validation should use a proper validator.
- */
-export function isServiceManifest(obj: unknown): obj is ServiceManifest {
-  if (!obj || typeof obj !== "object") {
-    return false;
-  }
-
-  const manifest = obj as Record<string, unknown>;
-
-  // Required fields check
-  if (
-    typeof manifest.id !== "string" ||
-    typeof manifest.name !== "string" ||
-    typeof manifest.description !== "string" ||
-    typeof manifest.version !== "string" ||
-    !manifest.trigger ||
-    typeof manifest.trigger !== "object" ||
-    !manifest.config ||
-    typeof manifest.config !== "object" ||
-    !manifest.requires ||
-    typeof manifest.requires !== "object" ||
-    !manifest.capabilities ||
-    typeof manifest.capabilities !== "object"
-  ) {
-    return false;
-  }
-
-  // Validate id format (kebab-case)
-  const idPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-  if (!idPattern.test(manifest.id)) {
-    return false;
-  }
-
-  // Validate semver version
-  const versionPattern = /^\d+\.\d+\.\d+(?:-[\w.]+)?$/;
-  if (!versionPattern.test(manifest.version)) {
-    return false;
-  }
-
-  // Validate trigger type
-  const trigger = manifest.trigger as Record<string, unknown>;
-  const validTriggerTypes = ["cron", "webhook", "message", "web"];
-  if (
-    !trigger.type ||
-    typeof trigger.type !== "string" ||
-    !validTriggerTypes.includes(trigger.type)
-  ) {
-    return false;
-  }
-
-  return true;
+export interface ServiceCapabilities {
+  network?: boolean;
+  filesystem?: boolean;
+  shell?: boolean;
+  browser?: boolean;
+  webhook?: boolean;
+  cron?: boolean;
+  message?: boolean;
+  web?: boolean;
+  privilegedTools?: string[];
+  requiresConfirmation?: string[];
 }
 
-/**
- * Get the JSON Schema for Service manifests.
- * This can be used for documentation or external validation.
- */
-export function getServiceManifestJSONSchema(): Record<string, unknown> {
-  return ServiceManifestSchema;
+// Validation Functions
+
+export function validateServiceManifest(
+  obj: unknown,
+):
+  | { success: true; data: ServiceManifest }
+  | { success: false; errors: z.ZodError<ServiceManifest> } {
+  const result = ServiceManifestSchema.safeParse(obj);
+
+  if (result.success) {
+    return { success: true, data: result.data };
+  } else {
+    return { success: false, errors: result.error };
+  }
+}
+
+export function isServiceManifest(obj: unknown): obj is ServiceManifest {
+  return ServiceManifestSchema.safeParse(obj).success;
+}
+
+export function formatValidationErrors(error: z.ZodError<ServiceManifest>): string {
+  return error.issues
+    .map((issue) => {
+      const path = issue.path.length > 0 ? issue.path.join(".") : "root";
+      return `${path}: ${issue.message}`;
+    })
+    .join("\n");
 }
 
 export default ServiceManifestSchema;
