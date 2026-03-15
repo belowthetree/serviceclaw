@@ -103,6 +103,15 @@ touch services/my-service/script/entry.ts
 touch services/my-service/ui/index.html
 ```
 
+### 1.5. Install Dependencies (for inline SCP client)
+
+If using the inline SCP client (Option B below), install the `ws` package:
+
+```bash
+cd services/my-service
+npm install ws
+```
+
 ### 2. Write manifest.json
 
 ```json
@@ -209,6 +218,10 @@ touch services/my-service/ui/index.html
 
 ### 3. Write Service Script (entry.ts)
 
+Services use the SCP (Service Communication Protocol) over WebSocket to communicate with the Agent. You can use either the `@openclaw/service-sdk` package (when published) or an inline client implementation.
+
+#### Option A: Using @openclaw/service-sdk (recommended when available)
+
 ```typescript
 import { ServiceClient } from "@openclaw/service-sdk";
 
@@ -272,6 +285,230 @@ async function main() {
 
   // 5. Graceful shutdown
   process.on("SIGINT", async () => {
+    console.log("[my-service] Shutting down...");
+    client.disconnect();
+    process.exit(0);
+  });
+}
+
+main().catch(console.error);
+```
+
+#### Option B: Inline SCP Client (when SDK is not yet published)
+
+If `@openclaw/service-sdk` is not available, use this inline WebSocket client:
+
+```typescript
+import { randomUUID } from "node:crypto";
+import WebSocket from "ws";
+
+// ============================================================================
+// Inline SCP Client - implements Service Communication Protocol
+// ============================================================================
+interface SCPMessage {
+  type: string;
+  serviceId: string;
+  requestId: string;
+  timestamp: string;
+  payload: unknown;
+}
+
+interface SCPOptions {
+  name: string;
+  version: string;
+  reconnect?: {
+    enabled: boolean;
+    maxRetries: number;
+    initialDelay: number;
+    maxDelay: number;
+  };
+}
+
+function createSCPClient(serviceId: string, options: SCPOptions) {
+  const reconnect = {
+    enabled: options.reconnect?.enabled ?? true,
+    maxRetries: options.reconnect?.maxRetries ?? 5,
+    initialDelay: options.reconnect?.initialDelay ?? 1000,
+    maxDelay: options.reconnect?.maxDelay ?? 16000,
+  };
+
+  let ws: WebSocket | null = null;
+  let connected = false;
+  let reconnectAttempts = 0;
+  let reconnectTimeout: NodeJS.Timeout | null = null;
+  const eventHandlers = new Map<string, Set<(data: unknown) => void>>();
+  const pendingRequests = new Map<string, { resolve: Function; reject: Function }>();
+
+  function sendMessage(type: string, payload: unknown, requestId?: string): void {
+    if (!ws || !connected) throw new Error("Not connected");
+    const message: SCPMessage = {
+      type,
+      serviceId,
+      requestId: requestId ?? randomUUID(),
+      timestamp: new Date().toISOString(),
+      payload,
+    };
+    ws.send(JSON.stringify(message));
+  }
+
+  function handleMessage(data: string): void {
+    try {
+      const msg = JSON.parse(data) as SCPMessage;
+
+      if (msg.type === "agent.response") {
+        const pending = pendingRequests.get(msg.requestId);
+        if (pending) {
+          pendingRequests.delete(msg.requestId);
+          const payload = msg.payload as {
+            success: boolean;
+            data?: unknown;
+            error?: { message: string };
+          };
+          if (payload.success) {
+            pending.resolve(payload.data);
+          } else {
+            pending.reject(new Error(payload.error?.message ?? "Unknown error"));
+          }
+        }
+      } else if (msg.type === "agent.stop-request") {
+        const payload = msg.payload as { reason: string; force?: boolean };
+        emit("stop-requested", payload);
+      }
+    } catch (err) {
+      emit("error", err);
+    }
+  }
+
+  function emit(event: string, data?: unknown): void {
+    const handlers = eventHandlers.get(event);
+    if (handlers) {
+      for (const h of handlers) h(data);
+    }
+  }
+
+  function on(event: string, handler: (data: unknown) => void): void {
+    if (!eventHandlers.has(event)) eventHandlers.set(event, new Set());
+    eventHandlers.get(event)!.add(handler);
+  }
+
+  async function connect(url: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const wsUrl = `${url}?serviceId=${serviceId}`;
+      ws = new WebSocket(wsUrl);
+
+      const timeout = setTimeout(() => {
+        ws?.close();
+        reject(new Error("Connection timeout"));
+      }, 10000);
+
+      ws.on("open", () => {
+        clearTimeout(timeout);
+        connected = true;
+        reconnectAttempts = 0;
+
+        // Send handshake
+        sendMessage("service.started", { name: options.name, version: options.version });
+        emit("connected");
+        resolve();
+      });
+
+      ws.on("message", (data) => handleMessage(data.toString()));
+
+      ws.on("close", (code, reason) => {
+        connected = false;
+        emit("disconnected", { code, reason: reason.toString() });
+
+        if (reconnect.enabled && reconnectAttempts < reconnect.maxRetries) {
+          reconnectAttempts++;
+          const delay = Math.min(
+            reconnect.initialDelay * Math.pow(2, reconnectAttempts - 1),
+            reconnect.maxDelay,
+          );
+          emit("reconnecting", {
+            attempt: reconnectAttempts,
+            maxRetries: reconnect.maxRetries,
+            delay,
+          });
+          reconnectTimeout = setTimeout(() => connect(url).catch(() => {}), delay);
+        }
+      });
+
+      ws.on("error", (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
+    });
+  }
+
+  function disconnect(): void {
+    if (reconnectTimeout) clearTimeout(reconnectTimeout);
+    if (ws && connected) {
+      sendMessage("service.stopped", { reason: "shutdown" });
+    }
+    ws?.close();
+    ws = null;
+    connected = false;
+  }
+
+  function emitEvent(event: string, data?: unknown): void {
+    sendMessage("service.event", { event, data });
+  }
+
+  function callAction(action: string, params: unknown, timeoutMs = 30000): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      const requestId = randomUUID();
+      const timeout = setTimeout(() => {
+        pendingRequests.delete(requestId);
+        reject(new Error(`Action '${action}' timed out`));
+      }, timeoutMs);
+
+      pendingRequests.set(requestId, {
+        resolve: (data: unknown) => {
+          clearTimeout(timeout);
+          resolve(data);
+        },
+        reject: (err: Error) => {
+          clearTimeout(timeout);
+          reject(err);
+        },
+      });
+
+      sendMessage("service.action", { action, params }, requestId);
+    });
+  }
+
+  return { connect, disconnect, on, emitEvent, callAction, isConnected: () => connected };
+}
+
+// ============================================================================
+// Service Implementation
+// ============================================================================
+const SERVICE_ID = "my-service";
+const SERVICE_NAME = "My Service";
+const SERVICE_VERSION = "1.0.0";
+const AGENT_URL = "ws://localhost:18789/__openclaw__/scp";
+
+async function main() {
+  const client = createSCPClient(SERVICE_ID, {
+    name: SERVICE_NAME,
+    version: SERVICE_VERSION,
+    reconnect: { enabled: true, maxRetries: 5, initialDelay: 1000, maxDelay: 16000 },
+  });
+
+  client.on("connected", () => console.log("[my-service] Connected to Agent"));
+  client.on("disconnected", ({ code, reason }: { code: number; reason: string }) =>
+    console.log(`[my-service] Disconnected: ${code} - ${reason}`),
+  );
+  client.on("stop-requested", ({ reason }: { reason: string }) => {
+    console.log(`[my-service] Stop requested: ${reason}`);
+    client.disconnect();
+    process.exit(0);
+  });
+
+  await client.connect(AGENT_URL);
+  console.log("[my-service] Service started");
+
+  process.on("SIGINT", () => {
     console.log("[my-service] Shutting down...");
     client.disconnect();
     process.exit(0);
@@ -389,62 +626,103 @@ services/helloworld/
 
 ### script/entry.ts
 
-```typescript
-import { ServiceClient } from "@openclaw/service-sdk";
+This example uses the inline SCP client (no external SDK dependency required):
 
+```typescript
+import { randomUUID } from "node:crypto";
+import WebSocket from "ws";
+
+// ============================================================================
+// Inline SCP Client - minimal implementation for service communication
+// ============================================================================
+function createSCPClient(serviceId: string, options: { name: string; version: string }) {
+  let ws: WebSocket | null = null;
+  let connected = false;
+  const handlers = new Map<string, Set<(data: unknown) => void>>();
+
+  function send(type: string, payload: unknown): void {
+    if (!ws || !connected) return;
+    ws.send(
+      JSON.stringify({
+        type,
+        serviceId,
+        requestId: randomUUID(),
+        timestamp: new Date().toISOString(),
+        payload,
+      }),
+    );
+  }
+
+  function on(event: string, handler: (data: unknown) => void): void {
+    if (!handlers.has(event)) handlers.set(event, new Set());
+    handlers.get(event)!.add(handler);
+  }
+
+  function emit(event: string, data?: unknown): void {
+    handlers.get(event)?.forEach((h) => h(data));
+  }
+
+  async function connect(url: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      ws = new WebSocket(`${url}?serviceId=${serviceId}`);
+      const timeout = setTimeout(() => {
+        ws?.close();
+        reject(new Error("Timeout"));
+      }, 10000);
+
+      ws.on("open", () => {
+        clearTimeout(timeout);
+        connected = true;
+        send("service.started", { name: options.name, version: options.version });
+        emit("connected");
+        resolve();
+      });
+
+      ws.on("message", (data) => {
+        const msg = JSON.parse(data.toString());
+        if (msg.type === "agent.stop-request") emit("stop-requested", msg.payload);
+      });
+
+      ws.on("close", (code, reason) => emit("disconnected", { code, reason: reason.toString() }));
+      ws.on("error", (err) => reject(err));
+    });
+  }
+
+  function disconnect(): void {
+    if (ws && connected) send("service.stopped", { reason: "shutdown" });
+    ws?.close();
+    connected = false;
+  }
+
+  return { connect, disconnect, on, isConnected: () => connected };
+}
+
+// ============================================================================
+// HelloWorld Service
+// ============================================================================
 const SERVICE_ID = "helloworld";
-const SERVICE_NAME = "HelloWorld";
-const SERVICE_VERSION = "1.0.0";
 const AGENT_URL = "ws://localhost:18789/__openclaw__/scp";
 
 async function main() {
-  // Create service client
-  const client = new ServiceClient(SERVICE_ID, {
-    name: SERVICE_NAME,
-    version: SERVICE_VERSION,
-    actionTimeout: 30000,
-    reconnect: {
-      enabled: true,
-      maxRetries: 5,
-      initialDelay: 1000,
-      maxDelay: 16000,
-    },
-  });
+  const client = createSCPClient(SERVICE_ID, { name: "HelloWorld", version: "1.0.0" });
 
-  // Set up event handlers
-  client.on("connected", () => {
-    console.log("helloworld"); // Logs when SCP connects to agent
-  });
-
-  client.on("disconnected", ({ code, reason }) => {
-    console.log(`[${SERVICE_ID}] Disconnected: ${code} - ${reason}`);
-  });
-
-  client.on("stop-requested", ({ reason, force }) => {
-    console.log(`[${SERVICE_ID}] Stop requested: ${reason}`);
-    handleShutdown();
-  });
-
-  // Handle UI events (if any)
-  client.on("ui.event", async (event) => {
-    console.log(`[${SERVICE_ID}] UI event:`, event.type);
-  });
-
-  // Connect to Agent
-  await client.connect(AGENT_URL);
-  console.log(`[${SERVICE_ID}] Service started`);
-
-  // Graceful shutdown
-  process.on("SIGINT", async () => {
-    console.log(`[${SERVICE_ID}] Shutting down...`);
+  client.on("connected", () => console.log("helloworld"));
+  client.on("disconnected", ({ code, reason }: { code: number; reason: string }) =>
+    console.log(`[helloworld] Disconnected: ${code} - ${reason}`),
+  );
+  client.on("stop-requested", ({ reason }: { reason: string }) => {
+    console.log(`[helloworld] Stop requested: ${reason}`);
     client.disconnect();
     process.exit(0);
   });
-}
 
-async function handleShutdown(): Promise<void> {
-  console.log(`[${SERVICE_ID}] Performing cleanup...`);
-  process.exit(0);
+  await client.connect(AGENT_URL);
+  console.log("[helloworld] Service started");
+
+  process.on("SIGINT", () => {
+    client.disconnect();
+    process.exit(0);
+  });
 }
 
 main().catch(console.error);
@@ -452,10 +730,11 @@ main().catch(console.error);
 
 **Key concepts:**
 
-- `ServiceClient`: Manages WebSocket connection to the Agent
-- `connected` event: Triggered when SCP successfully connects - this is where we log "helloworld"
-- `AGENT_URL`: WebSocket endpoint for SCP protocol
-- Graceful shutdown handlers for SIGINT and stop-requested events
+- **Inline SCP Client**: Minimal WebSocket client implementing SCP protocol - no external SDK required
+- **WebSocket endpoint**: `ws://localhost:18789/__openclaw__/scp?serviceId={id}`
+- **Handshake**: Send `service.started` message immediately after connection
+- **Message format**: All messages include `type`, `serviceId`, `requestId`, `timestamp`, `payload`
+- **Graceful shutdown**: Send `service.stopped` before closing connection
 
 ### ui/index.html
 

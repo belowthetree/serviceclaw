@@ -29,6 +29,7 @@ export interface LifecycleSyncOptions {
 
 const syncStates = new Map<string, SyncState>();
 const modalRegistry = new Map<string, ServiceModal>();
+const closeHandlers = new Map<string, () => void>();
 const defaultOptions: Required<LifecycleSyncOptions> = {
   closeOnUnexpectedStop: false,
   showErrorOnFailure: true,
@@ -36,7 +37,7 @@ const defaultOptions: Required<LifecycleSyncOptions> = {
   stopTimeout: 10000,
 };
 
-function getOrCreateModal(serviceId: string): ServiceModal {
+function getOrCreateModal(serviceId: string, gatewayClient?: GatewayBrowserClient): ServiceModal {
   console.log("[lifecycle-sync] Getting or creating modal for service:", serviceId);
 
   const isRegistered = !!customElements.get("service-modal");
@@ -51,8 +52,10 @@ function getOrCreateModal(serviceId: string): ServiceModal {
   const existingElement = document.querySelector(`service-modal[data-service-id="${serviceId}"]`);
   if (existingElement) {
     console.log("[lifecycle-sync] Found existing modal in DOM");
-    modalRegistry.set(serviceId, existingElement);
-    return existingElement;
+    modal = existingElement as ServiceModal;
+    modalRegistry.set(serviceId, modal);
+    setupModalCloseHandler(modal, serviceId, gatewayClient);
+    return modal;
   }
 
   console.log("[lifecycle-sync] Creating new modal element");
@@ -61,8 +64,28 @@ function getOrCreateModal(serviceId: string): ServiceModal {
   document.body.appendChild(modal);
   console.log("[lifecycle-sync] Modal appended to body, constructor:", modal.constructor.name);
   modalRegistry.set(serviceId, modal);
+  setupModalCloseHandler(modal, serviceId, gatewayClient);
 
   return modal;
+}
+
+function setupModalCloseHandler(
+  modal: ServiceModal,
+  serviceId: string,
+  gatewayClient?: GatewayBrowserClient,
+): void {
+  const existingHandler = closeHandlers.get(serviceId);
+  if (existingHandler) {
+    modal.removeEventListener("modal-close", existingHandler);
+  }
+
+  const handler = () => {
+    console.log("[lifecycle-sync] Modal closed by user, stopping service:", serviceId);
+    void closeServiceModal(serviceId, gatewayClient);
+  };
+
+  closeHandlers.set(serviceId, handler);
+  modal.addEventListener("modal-close", handler);
 }
 
 export function syncModalWithService(
@@ -110,7 +133,7 @@ export async function openServiceModal(
   gatewayClient?: GatewayBrowserClient,
 ): Promise<void> {
   console.log("[lifecycle-sync] openServiceModal called:", serviceId, serviceName);
-  const modal = getOrCreateModal(serviceId);
+  const modal = getOrCreateModal(serviceId, gatewayClient);
   const syncState = syncStates.get(serviceId) || {
     serviceId,
     isSyncing: true,
@@ -131,8 +154,20 @@ export async function openServiceModal(
   try {
     if (gatewayClient) {
       console.log("[lifecycle-sync] Starting service via Gateway API...");
-      await gatewayClient.startService(serviceId);
-      console.log("[lifecycle-sync] Service started successfully");
+      try {
+        await gatewayClient.startService(serviceId);
+        console.log("[lifecycle-sync] Service started successfully");
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (errorMessage.includes("already started") || errorMessage.includes("already starting")) {
+          console.log("[lifecycle-sync] Service already running, stopping and restarting...");
+          await gatewayClient.stopService(serviceId);
+          await gatewayClient.startService(serviceId);
+          console.log("[lifecycle-sync] Service restarted successfully");
+        } else {
+          throw error;
+        }
+      }
     }
 
     console.log("[lifecycle-sync] Waiting for modal to be ready...");
@@ -173,14 +208,25 @@ export async function openServiceModal(
 
 export async function closeServiceModal(
   serviceId: string,
-  _gatewayClient?: GatewayBrowserClient,
+  gatewayClient?: GatewayBrowserClient,
 ): Promise<void> {
   const modal = modalRegistry.get(serviceId);
+
+  if (gatewayClient) {
+    try {
+      await gatewayClient.stopService(serviceId);
+    } catch (error) {
+      console.error("[lifecycle-sync] Failed to stop service:", error);
+    }
+  }
+
   if (modal) {
     modal.close();
   }
+
   syncStates.delete(serviceId);
   modalRegistry.delete(serviceId);
+  closeHandlers.delete(serviceId);
 }
 
 export type { ServiceModal };

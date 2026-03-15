@@ -461,51 +461,23 @@ export class GatewayBrowserClient {
   }
 
   async enableService(serviceId: string): Promise<void> {
-    const result = await this.request<{ ok: boolean }>("services.enable", {
-      serviceId,
-    });
-    if (!result.ok) {
-      throw new Error(`Failed to enable service: ${serviceId}`);
-    }
+    await this.request("services.enable", { serviceId });
   }
 
   async disableService(serviceId: string): Promise<void> {
-    const result = await this.request<{ ok: boolean }>("services.disable", {
-      serviceId,
-    });
-    if (!result.ok) {
-      throw new Error(`Failed to disable service: ${serviceId}`);
-    }
+    await this.request("services.disable", { serviceId });
   }
 
   async startService(
     serviceId: string,
   ): Promise<{ serviceId: string; state: string; pid?: number }> {
-    const result = await this.request<{
-      success: boolean;
-      serviceId: string;
-      state: string;
-      pid?: number;
-      error?: { message: string };
-    }>("services.start", {
+    return this.request<{ serviceId: string; state: string; pid?: number }>("services.start", {
       serviceId,
     });
-    if (!result.success) {
-      throw new Error(result.error?.message || `Failed to start service: ${serviceId}`);
-    }
-    return { serviceId: result.serviceId, state: result.state, pid: result.pid };
   }
 
   async stopService(serviceId: string): Promise<void> {
-    const result = await this.request<{ success: boolean; error?: { message: string } }>(
-      "services.stop",
-      {
-        serviceId,
-      },
-    );
-    if (!result.success) {
-      throw new Error(result.error?.message || `Failed to stop service: ${serviceId}`);
-    }
+    await this.request("services.stop", { serviceId });
   }
 
   private queueConnect() {
