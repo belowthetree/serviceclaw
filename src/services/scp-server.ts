@@ -309,7 +309,6 @@ export function createSCPServer(options: SCPServerOptions): SCPServer {
           ).catch((err) => log.error(`onServiceStarted handler error: ${String(err)}`));
         }
 
-        sendSuccess(connection.socket, connection.serviceId, baseMessage.requestId);
         break;
       }
 
@@ -338,7 +337,6 @@ export function createSCPServer(options: SCPServerOptions): SCPServer {
           ).catch((err) => log.error(`onServiceStopped handler error: ${String(err)}`));
         }
 
-        sendSuccess(connection.socket, connection.serviceId, baseMessage.requestId);
         connection.socket.close(1000, "Service stopped");
         break;
       }
@@ -462,8 +460,8 @@ export function createSCPServer(options: SCPServerOptions): SCPServer {
       `Service connected: ${serviceId} (conn=${connId}, remote=${request.socket.remoteAddress ?? "?"})`,
     );
 
-    socket.on("message", (data) => {
-      const text = data.toString();
+    socket.on("message", (data: string | Buffer) => {
+      const text = typeof data === "string" ? data : data.toString();
       handleMessage(connection, text);
     });
 
@@ -590,7 +588,7 @@ export function createSCPServer(options: SCPServerOptions): SCPServer {
 
       const closePromises: Promise<void>[] = [];
 
-      for (const [serviceId, connection] of connections) {
+      for (const [_serviceId, connection] of connections) {
         closePromises.push(
           new Promise<void>((resolve) => {
             const timeout = setTimeout(() => {

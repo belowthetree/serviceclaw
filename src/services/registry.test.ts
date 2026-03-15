@@ -7,7 +7,6 @@ import {
   ServiceRegistryError,
   ServiceNotFoundError,
   ServiceAlreadyExistsError,
-  InvalidStateTransitionError,
   getServiceRegistry,
   resetServiceRegistry,
   setServiceRegistry,
@@ -154,7 +153,6 @@ describe("ServiceRegistry", () => {
 
       expect(service.id).toBe("test-service");
       expect(service.manifest).toEqual(sampleManifest);
-      expect(service.state).toBe("pending");
       expect(service.config).toEqual({});
       expect(service.runtimeRefs.agentId).toBe("service:test-service");
       expect(service.createdAt).toBeDefined();
@@ -178,7 +176,6 @@ describe("ServiceRegistry", () => {
       const serviceDir = path.join(tempDir, "test-service");
       const manifestPath = path.join(serviceDir, "manifest.json");
       const configPath = path.join(serviceDir, "config.json");
-      const statePath = path.join(serviceDir, "state.json");
       const refsPath = path.join(serviceDir, "refs.json");
 
       const manifestExists = await fs
@@ -189,10 +186,6 @@ describe("ServiceRegistry", () => {
         .access(configPath)
         .then(() => true)
         .catch(() => false);
-      const stateExists = await fs
-        .access(statePath)
-        .then(() => true)
-        .catch(() => false);
       const refsExists = await fs
         .access(refsPath)
         .then(() => true)
@@ -200,24 +193,7 @@ describe("ServiceRegistry", () => {
 
       expect(manifestExists).toBe(true);
       expect(configExists).toBe(true);
-      expect(stateExists).toBe(true);
       expect(refsExists).toBe(true);
-    });
-
-    it("should update the index", async () => {
-      await registry.register(sampleManifest);
-
-      const indexPath = path.join(tempDir, "index.json");
-      const indexData = await fs.readFile(indexPath, "utf-8");
-      const index = JSON.parse(indexData);
-
-      expect(index.version).toBe(1);
-      expect(index.services).toHaveLength(1);
-      expect(index.services[0].id).toBe("test-service");
-      expect(index.services[0].name).toBe("Test Service");
-      expect(index.services[0].state).toBe("pending");
-      expect(index.services[0].triggerType).toBe("cron");
-      expect(index.services[0].category).toBe("productivity");
     });
 
     it("should throw ServiceAlreadyExistsError for duplicate service", async () => {
@@ -242,17 +218,6 @@ describe("ServiceRegistry", () => {
         .then(() => true)
         .catch(() => false);
       expect(exists).toBe(false);
-    });
-
-    it("should remove service from index", async () => {
-      await registry.register(sampleManifest);
-      await registry.unregister("test-service");
-
-      const indexPath = path.join(tempDir, "index.json");
-      const indexData = await fs.readFile(indexPath, "utf-8");
-      const index = JSON.parse(indexData);
-
-      expect(index.services).toHaveLength(0);
     });
 
     it("should throw ServiceNotFoundError for non-existent service", async () => {
@@ -283,18 +248,10 @@ describe("ServiceRegistry", () => {
       const initialConfig = { greeting: "Hello" };
       await registry.register(sampleManifest, initialConfig);
 
-      // Modify state through valid transitions
-      await registry.updateState("test-service", "validating");
-      await registry.updateState("test-service", "installing");
-      await registry.updateState("test-service", "installed");
-      await registry.updateState("test-service", "enabled");
-
       // Get fresh instance
       const service = await registry.get("test-service");
 
-      expect(service?.state).toBe("enabled");
       expect(service?.config).toEqual(initialConfig);
-      expect(service?.stateHistory).toHaveLength(4);
     });
   });
 
@@ -308,71 +265,6 @@ describe("ServiceRegistry", () => {
     it("should return false for non-existent service", async () => {
       const exists = await registry.exists("non-existent");
       expect(exists).toBe(false);
-    });
-  });
-
-  // ============================================================================
-  // State Transitions
-  // ============================================================================
-
-  describe("updateState", () => {
-    beforeEach(async () => {
-      await registry.register(sampleManifest);
-    });
-
-    it("should update service state", async () => {
-      await registry.updateState("test-service", "validating");
-      const service = await registry.get("test-service");
-      expect(service?.state).toBe("validating");
-    });
-
-    it("should record state transitions", async () => {
-      await registry.updateState("test-service", "validating", "Starting validation");
-      await registry.updateState("test-service", "installing", "Validation passed");
-
-      const service = await registry.get("test-service");
-      expect(service?.stateHistory).toHaveLength(2);
-      expect(service?.stateHistory[0].from).toBe("pending");
-      expect(service?.stateHistory[0].to).toBe("validating");
-      expect(service?.stateHistory[0].reason).toBe("Starting validation");
-      expect(service?.stateHistory[1].from).toBe("validating");
-      expect(service?.stateHistory[1].to).toBe("installing");
-    });
-
-    it("should update updatedAt timestamp", async () => {
-      const before = Date.now();
-      await new Promise((r) => setTimeout(r, 10)); // Small delay
-
-      await registry.updateState("test-service", "validating");
-
-      const service = await registry.get("test-service");
-      expect(new Date(service?.updatedAt ?? 0).getTime()).toBeGreaterThanOrEqual(before);
-    });
-
-    it("should throw InvalidStateTransitionError for invalid transitions", async () => {
-      // First get to installed state through valid transitions
-      await registry.updateState("test-service", "validating");
-      await registry.updateState("test-service", "installing");
-      await registry.updateState("test-service", "installed");
-
-      // Now try an invalid transition from installed back to pending
-      await expect(registry.updateState("test-service", "pending")).rejects.toThrow(
-        InvalidStateTransitionError,
-      );
-    });
-
-    it("should throw ServiceNotFoundError for non-existent service", async () => {
-      await expect(registry.updateState("non-existent", "enabled")).rejects.toThrow(
-        ServiceNotFoundError,
-      );
-    });
-
-    it("should allow same-state transitions", async () => {
-      await registry.updateState("test-service", "validating");
-      await registry.updateState("test-service", "validating"); // Should not throw
-
-      const service = await registry.get("test-service");
-      expect(service?.stateHistory).toHaveLength(2);
     });
   });
 
@@ -501,83 +393,6 @@ describe("ServiceRegistry", () => {
   });
 
   // ============================================================================
-  // Execution Statistics
-  // ============================================================================
-
-  describe("recordSuccess", () => {
-    beforeEach(async () => {
-      await registry.register(sampleManifest);
-    });
-
-    it("should record successful execution", async () => {
-      await registry.recordSuccess("test-service");
-
-      const service = await registry.get("test-service");
-      expect(service?.executionStats.totalRuns).toBe(1);
-      expect(service?.executionStats.successfulRuns).toBe(1);
-      expect(service?.executionStats.failedRuns).toBe(0);
-      expect(service?.lastRunAt).toBeDefined();
-    });
-
-    it("should accumulate multiple successes", async () => {
-      await registry.recordSuccess("test-service");
-      await registry.recordSuccess("test-service");
-
-      const service = await registry.get("test-service");
-      expect(service?.executionStats.totalRuns).toBe(2);
-      expect(service?.executionStats.successfulRuns).toBe(2);
-    });
-
-    it("should throw ServiceNotFoundError for non-existent service", async () => {
-      await expect(registry.recordSuccess("non-existent")).rejects.toThrow(ServiceNotFoundError);
-    });
-  });
-
-  describe("recordFailure", () => {
-    beforeEach(async () => {
-      await registry.register(sampleManifest);
-    });
-
-    it("should record failed execution", async () => {
-      const error = new Error("Test error");
-      await registry.recordFailure("test-service", error);
-
-      const service = await registry.get("test-service");
-      expect(service?.executionStats.totalRuns).toBe(1);
-      expect(service?.executionStats.successfulRuns).toBe(0);
-      expect(service?.executionStats.failedRuns).toBe(1);
-      expect(service?.executionStats.lastError?.message).toBe("Test error");
-      expect(service?.executionStats.lastError?.stack).toBeDefined();
-    });
-
-    it("should throw ServiceNotFoundError for non-existent service", async () => {
-      await expect(registry.recordFailure("non-existent", new Error())).rejects.toThrow(
-        ServiceNotFoundError,
-      );
-    });
-  });
-
-  describe("updateNextRun", () => {
-    beforeEach(async () => {
-      await registry.register(sampleManifest);
-    });
-
-    it("should update next run time", async () => {
-      const nextRun = new Date(Date.now() + 3600000).toISOString();
-      await registry.updateNextRun("test-service", nextRun);
-
-      const service = await registry.get("test-service");
-      expect(service?.nextRunAt).toBe(nextRun);
-    });
-
-    it("should throw ServiceNotFoundError for non-existent service", async () => {
-      await expect(
-        registry.updateNextRun("non-existent", new Date().toISOString()),
-      ).rejects.toThrow(ServiceNotFoundError);
-    });
-  });
-
-  // ============================================================================
   // Listing and Querying
   // ============================================================================
 
@@ -591,17 +406,6 @@ describe("ServiceRegistry", () => {
     it("should list all services", async () => {
       const services = await registry.list();
       expect(services).toHaveLength(3);
-    });
-
-    it("should filter by state", async () => {
-      await registry.updateState("test-service", "validating");
-      await registry.updateState("test-service", "installing");
-      await registry.updateState("test-service", "installed");
-      await registry.updateState("test-service", "enabled");
-
-      const services = await registry.list({ state: "enabled" });
-      expect(services).toHaveLength(1);
-      expect(services[0].id).toBe("test-service");
     });
 
     it("should filter by category", async () => {
@@ -634,27 +438,6 @@ describe("ServiceRegistry", () => {
     });
   });
 
-  describe("getByState", () => {
-    beforeEach(async () => {
-      await registry.register(sampleManifest);
-      await registry.updateState("test-service", "validating");
-      await registry.updateState("test-service", "installing");
-      await registry.updateState("test-service", "installed");
-      await registry.updateState("test-service", "enabled");
-    });
-
-    it("should return services in specified state", async () => {
-      const services = await registry.getByState("enabled");
-      expect(services).toHaveLength(1);
-      expect(services[0].id).toBe("test-service");
-    });
-
-    it("should return empty array when no matches", async () => {
-      const services = await registry.getByState("error");
-      expect(services).toHaveLength(0);
-    });
-  });
-
   describe("getAll", () => {
     beforeEach(async () => {
       await registry.register(sampleManifest);
@@ -666,75 +449,321 @@ describe("ServiceRegistry", () => {
       expect(services).toHaveLength(2);
       expect(services[0]).toHaveProperty("manifest");
       expect(services[0]).toHaveProperty("config");
-      expect(services[0]).toHaveProperty("stateHistory");
     });
   });
 
   // ============================================================================
-  // Lifecycle Helpers
+  // GetAll with Directory Scanning
   // ============================================================================
 
-  describe("enable/disable", () => {
-    beforeEach(async () => {
-      await registry.register(sampleManifest);
+  describe("getAll with directory scanning", () => {
+    it("should return ServiceInstance[] array from directory scan", async () => {
+      // Manually create service directories without using register()
+      const service1Dir = path.join(tempDir, "scan-service-1");
+      const service2Dir = path.join(tempDir, "scan-service-2");
+
+      // Create service 1 directory with all required files
+      await fs.mkdir(service1Dir, { recursive: true });
+      await fs.writeFile(
+        path.join(service1Dir, "manifest.json"),
+        JSON.stringify({
+          $schema: "https://openclaw.ai/schemas/service-v1.json",
+          id: "scan-service-1",
+          name: "Scan Service 1",
+          description: "A test service for directory scanning",
+          version: "1.0.0",
+          category: "productivity",
+          trigger: { type: "cron", schedule: "0 8 * * *", timezone: "auto" },
+          requires: { tools: [] },
+          capabilities: { network: false, filesystem: false },
+        }),
+      );
+      await fs.writeFile(
+        path.join(service1Dir, "config.json"),
+        JSON.stringify({ greeting: "Hello" }),
+      );
+      await fs.writeFile(
+        path.join(service1Dir, "state.json"),
+        JSON.stringify({
+          state: "enabled",
+          stateHistory: [{ from: "pending", to: "enabled", at: new Date().toISOString() }],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }),
+      );
+      await fs.writeFile(
+        path.join(service1Dir, "refs.json"),
+        JSON.stringify({ agentId: "service:scan-service-1" }),
+      );
+
+      // Create service 2 directory with all required files
+      await fs.mkdir(service2Dir, { recursive: true });
+      await fs.writeFile(
+        path.join(service2Dir, "manifest.json"),
+        JSON.stringify({
+          $schema: "https://openclaw.ai/schemas/service-v1.json",
+          id: "scan-service-2",
+          name: "Scan Service 2",
+          description: "Another test service for directory scanning",
+          version: "1.0.0",
+          category: "integration",
+          trigger: { type: "webhook", path: "/test", methods: ["POST"] },
+          requires: { tools: [] },
+          capabilities: { network: true, filesystem: false },
+        }),
+      );
+      await fs.writeFile(path.join(service2Dir, "config.json"), JSON.stringify({ count: 42 }));
+      await fs.writeFile(
+        path.join(service2Dir, "state.json"),
+        JSON.stringify({
+          state: "pending",
+          stateHistory: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }),
+      );
+      await fs.writeFile(
+        path.join(service2Dir, "refs.json"),
+        JSON.stringify({ agentId: "service:scan-service-2" }),
+      );
+
+      // Create new registry instance to force fresh directory scan
+      const scanRegistry = new ServiceRegistry({
+        fs,
+        servicesDir: tempDir,
+      });
+
+      const services = await scanRegistry.getAll();
+
+      expect(Array.isArray(services)).toBe(true);
+      expect(services).toHaveLength(2);
+
+      const service1 = services.find((s: { id: string }) => s.id === "scan-service-1");
+      const service2 = services.find((s: { id: string }) => s.id === "scan-service-2");
+
+      expect(service1).toBeDefined();
+      expect(service2).toBeDefined();
     });
 
-    it("should enable service", async () => {
-      await registry.updateState("test-service", "validating");
-      await registry.updateState("test-service", "installing");
-      await registry.updateState("test-service", "installed");
-      await registry.enable("test-service");
-      const service = await registry.get("test-service");
-      expect(service?.state).toBe("enabled");
+    it("should include complete manifest, config, and state data", async () => {
+      // Create a service with full data
+      const serviceDir = path.join(tempDir, "complete-service");
+      const now = new Date().toISOString();
+
+      await fs.mkdir(serviceDir, { recursive: true });
+      await fs.writeFile(
+        path.join(serviceDir, "manifest.json"),
+        JSON.stringify({
+          $schema: "https://openclaw.ai/schemas/service-v1.json",
+          id: "complete-service",
+          name: "Complete Service",
+          description: "Service with complete data",
+          version: "2.0.0",
+          author: "Test Author",
+          category: "automation",
+          trigger: { type: "cron", schedule: "0 9 * * *", timezone: "UTC" },
+          config: {
+            apiKey: { type: "secret", description: "API key", required: true },
+            timeout: { type: "number", description: "Timeout", default: 30 },
+          },
+          requires: { skills: ["weather"], tools: ["message.send"], env: [], config: [] },
+          capabilities: { privilegedTools: ["message.send"], network: true, filesystem: true },
+          execution: {
+            agentId: "service:complete-service",
+            sessionTarget: "isolated",
+            timeout: 60000,
+          },
+        }),
+      );
+      await fs.writeFile(
+        path.join(serviceDir, "config.json"),
+        JSON.stringify({ apiKey: "secret123", timeout: 60 }),
+      );
+      await fs.writeFile(
+        path.join(serviceDir, "state.json"),
+        JSON.stringify({
+          state: "installed",
+          stateHistory: [
+            { from: "pending", to: "validating", at: now, reason: "Starting validation" },
+            { from: "validating", to: "installing", at: now, reason: "Validation passed" },
+            { from: "installing", to: "installed", at: now, reason: "Installation complete" },
+          ],
+          createdAt: now,
+          updatedAt: now,
+          executionStats: { totalRuns: 5, successfulRuns: 4, failedRuns: 1 },
+          lastRunAt: now,
+          nextRunAt: new Date(Date.now() + 3600000).toISOString(),
+        }),
+      );
+      await fs.writeFile(
+        path.join(serviceDir, "refs.json"),
+        JSON.stringify({
+          agentId: "service:complete-service",
+          cronJobIds: ["job1", "job2"],
+          webhookPaths: ["/webhook1"],
+        }),
+      );
+
+      const scanRegistry = new ServiceRegistry({
+        fs,
+        servicesDir: tempDir,
+      });
+
+      const services = await scanRegistry.getAll();
+      expect(services).toHaveLength(1);
+
+      const service = services[0];
+
+      // Verify ServiceInstance structure
+      expect(service.id).toBe("complete-service");
+      expect(service.manifest).toBeDefined();
+      expect(service.manifest.id).toBe("complete-service");
+      expect(service.manifest.name).toBe("Complete Service");
+      expect(service.manifest.version).toBe("2.0.0");
+      expect(service.config).toEqual({ apiKey: "secret123", timeout: 60 });
+      expect(service.createdAt).toBeDefined();
+      expect(service.updatedAt).toBeDefined();
+      expect(service.runtimeRefs).toBeDefined();
+      expect(service.runtimeRefs.agentId).toBe("service:complete-service");
+      expect(service.runtimeRefs.cronJobIds).toEqual(["job1", "job2"]);
     });
 
-    it("should disable service", async () => {
-      await registry.updateState("test-service", "validating");
-      await registry.updateState("test-service", "installing");
-      await registry.updateState("test-service", "installed");
-      await registry.enable("test-service");
-      await registry.disable("test-service");
-      const service = await registry.get("test-service");
-      expect(service?.state).toBe("disabled");
-    });
-  });
+    it("should return empty array for empty directory", async () => {
+      // Create a new empty temp directory
+      const emptyDir = await fs.mkdtemp(path.join(os.tmpdir(), "empty-registry-test-"));
 
-  describe("markInstalling/installed", () => {
-    beforeEach(async () => {
-      await registry.register(sampleManifest);
-    });
+      const emptyRegistry = new ServiceRegistry({
+        fs,
+        servicesDir: emptyDir,
+      });
 
-    it("should mark as installing", async () => {
-      // First transition to validating, then to installing
-      await registry.updateState("test-service", "validating");
-      await registry.markInstalling("test-service");
-      const service = await registry.get("test-service");
-      expect(service?.state).toBe("installing");
+      const services = await emptyRegistry.getAll();
+
+      expect(Array.isArray(services)).toBe(true);
+      expect(services).toHaveLength(0);
+
+      // Clean up
+      await fs.rm(emptyDir, { recursive: true, force: true });
     });
 
-    it("should mark as installed", async () => {
-      await registry.updateState("test-service", "validating");
-      await registry.updateState("test-service", "installing");
-      await registry.markInstalled("test-service");
-      const service = await registry.get("test-service");
-      expect(service?.state).toBe("installed");
-    });
-  });
+    it("should gracefully handle invalid service directories", async () => {
+      // Create valid service
+      const validDir = path.join(tempDir, "valid-service");
+      await fs.mkdir(validDir, { recursive: true });
+      await fs.writeFile(
+        path.join(validDir, "manifest.json"),
+        JSON.stringify({
+          $schema: "https://openclaw.ai/schemas/service-v1.json",
+          id: "valid-service",
+          name: "Valid Service",
+          version: "1.0.0",
+          category: "productivity",
+          trigger: { type: "cron", schedule: "0 8 * * *", timezone: "auto" },
+          requires: { tools: [] },
+          capabilities: { network: false, filesystem: false },
+        }),
+      );
+      await fs.writeFile(path.join(validDir, "config.json"), JSON.stringify({}));
+      await fs.writeFile(
+        path.join(validDir, "state.json"),
+        JSON.stringify({
+          state: "pending",
+          stateHistory: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }),
+      );
+      await fs.writeFile(
+        path.join(validDir, "refs.json"),
+        JSON.stringify({ agentId: "service:valid-service" }),
+      );
 
-  describe("markError", () => {
-    beforeEach(async () => {
-      await registry.register(sampleManifest);
-      // Transition through valid states: pending -> validating -> installing -> installed -> enabled
-      await registry.updateState("test-service", "validating");
-      await registry.updateState("test-service", "installing");
-      await registry.updateState("test-service", "installed");
-      await registry.enable("test-service");
+      // Create invalid service (missing manifest.json)
+      const invalidDir1 = path.join(tempDir, "invalid-service-1");
+      await fs.mkdir(invalidDir1, { recursive: true });
+      await fs.writeFile(path.join(invalidDir1, "config.json"), JSON.stringify({}));
+      await fs.writeFile(
+        path.join(invalidDir1, "state.json"),
+        JSON.stringify({ state: "pending" }),
+      );
+
+      // Create invalid service (corrupt JSON)
+      const invalidDir2 = path.join(tempDir, "invalid-service-2");
+      await fs.mkdir(invalidDir2, { recursive: true });
+      await fs.writeFile(path.join(invalidDir2, "manifest.json"), "not valid json");
+      await fs.writeFile(path.join(invalidDir2, "config.json"), JSON.stringify({}));
+      await fs.writeFile(
+        path.join(invalidDir2, "state.json"),
+        JSON.stringify({ state: "pending" }),
+      );
+
+      // Create a file instead of directory (should be ignored)
+      await fs.writeFile(path.join(tempDir, "not-a-service.txt"), "I am not a service");
+
+      const scanRegistry = new ServiceRegistry({
+        fs,
+        servicesDir: tempDir,
+      });
+
+      // Should not throw, should return only valid services
+      const services = await scanRegistry.getAll();
+
+      expect(Array.isArray(services)).toBe(true);
+      expect(services).toHaveLength(1);
+      expect(services[0].id).toBe("valid-service");
     });
 
-    it("should mark service as error", async () => {
-      await registry.markError("test-service", "Connection failed");
-      const service = await registry.get("test-service");
-      expect(service?.state).toBe("error");
+    it("should work without index.json dependency", async () => {
+      // Create service directory
+      const serviceDir = path.join(tempDir, "no-index-service");
+      await fs.mkdir(serviceDir, { recursive: true });
+      await fs.writeFile(
+        path.join(serviceDir, "manifest.json"),
+        JSON.stringify({
+          $schema: "https://openclaw.ai/schemas/service-v1.json",
+          id: "no-index-service",
+          name: "No Index Service",
+          version: "1.0.0",
+          category: "productivity",
+          trigger: { type: "cron", schedule: "0 8 * * *", timezone: "auto" },
+          requires: { tools: [] },
+          capabilities: { network: false, filesystem: false },
+        }),
+      );
+      await fs.writeFile(path.join(serviceDir, "config.json"), JSON.stringify({ test: true }));
+      await fs.writeFile(
+        path.join(serviceDir, "state.json"),
+        JSON.stringify({
+          state: "enabled",
+          stateHistory: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }),
+      );
+      await fs.writeFile(
+        path.join(serviceDir, "refs.json"),
+        JSON.stringify({ agentId: "service:no-index-service" }),
+      );
+
+      // Delete index.json if it exists
+      const indexPath = path.join(tempDir, "index.json");
+      try {
+        await fs.unlink(indexPath);
+      } catch {
+        // Ignore if doesn't exist
+      }
+
+      const scanRegistry = new ServiceRegistry({
+        fs,
+        servicesDir: tempDir,
+      });
+
+      // Should still work without index.json
+      const services = await scanRegistry.getAll();
+
+      expect(services).toHaveLength(1);
+      expect(services[0].id).toBe("no-index-service");
+      expect(services[0].config.test).toBe(true);
     });
   });
 
@@ -773,19 +802,12 @@ describe("ServiceRegistry", () => {
     beforeEach(async () => {
       await registry.register(sampleManifest);
       await registry.register(webhookManifest);
-      // Transition through valid states to enable
-      await registry.updateState("test-service", "validating");
-      await registry.updateState("test-service", "installing");
-      await registry.updateState("test-service", "installed");
-      await registry.updateState("test-service", "enabled");
     });
 
     it("should return registry statistics", async () => {
       const stats = await registry.getStats();
 
       expect(stats.totalServices).toBe(2);
-      expect(stats.byState.enabled).toBe(1);
-      expect(stats.byState.pending).toBe(1);
       expect(stats.byCategory.productivity).toBe(1);
       expect(stats.byCategory.integration).toBe(1);
       expect(stats.byTriggerType.cron).toBe(1);
@@ -829,6 +851,393 @@ describe("ServiceRegistry", () => {
   });
 
   // ============================================================================
+  // Directory Scanning
+  // ============================================================================
+
+  describe("directory scanning", () => {
+    let scanTempDir: string;
+    let scanRegistry: ServiceRegistry;
+
+    beforeEach(async () => {
+      scanTempDir = await fs.mkdtemp(path.join(os.tmpdir(), "registry-scan-test-"));
+      scanRegistry = new ServiceRegistry({
+        fs,
+        servicesDir: scanTempDir,
+      });
+    });
+
+    afterEach(async () => {
+      await fs.rm(scanTempDir, { recursive: true, force: true });
+    });
+
+    it("should return empty array for empty directory", async () => {
+      // @ts-expect-error - accessing private method for testing
+      const result = await scanRegistry.scanServiceDirectories();
+      expect(result).toEqual([]);
+    });
+
+    it("should discover a single valid service directory", async () => {
+      // Create a service directory with required files
+      const serviceDir = path.join(scanTempDir, "my-service");
+      await fs.mkdir(serviceDir, { recursive: true });
+      await fs.writeFile(path.join(serviceDir, "manifest.json"), JSON.stringify(sampleManifest));
+      await fs.writeFile(
+        path.join(serviceDir, "state.json"),
+        JSON.stringify({
+          serviceId: "test-service",
+          state: "enabled",
+          stateHistory: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          executionStats: { totalRuns: 0, successfulRuns: 0, failedRuns: 0 },
+        }),
+      );
+
+      // @ts-expect-error - accessing private method for testing
+      const result = await scanRegistry.scanServiceDirectories();
+
+      expect(result).toHaveLength(1);
+      expect(result[0].serviceId).toBe("my-service");
+      expect(result[0].manifest).toBeDefined();
+    });
+
+    it("should discover multiple service directories", async () => {
+      // Create multiple service directories
+      for (const serviceId of ["service-a", "service-b", "service-c"]) {
+        const serviceDir = path.join(scanTempDir, serviceId);
+        await fs.mkdir(serviceDir, { recursive: true });
+        await fs.writeFile(
+          path.join(serviceDir, "manifest.json"),
+          JSON.stringify({ ...sampleManifest, id: serviceId }),
+        );
+        await fs.writeFile(
+          path.join(serviceDir, "state.json"),
+          JSON.stringify({
+            serviceId,
+            state: "enabled",
+            stateHistory: [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            executionStats: { totalRuns: 0, successfulRuns: 0, failedRuns: 0 },
+          }),
+        );
+      }
+
+      // @ts-expect-error - accessing private method for testing
+      const result = await scanRegistry.scanServiceDirectories();
+
+      expect(result).toHaveLength(3);
+      const serviceIds = result.map((s: { serviceId: string }) => s.serviceId).toSorted();
+      expect(serviceIds).toEqual(["service-a", "service-b", "service-c"]);
+    });
+
+    it("should skip hidden directories (starting with .)", async () => {
+      // Create visible service
+      const visibleDir = path.join(scanTempDir, "visible-service");
+      await fs.mkdir(visibleDir, { recursive: true });
+      await fs.writeFile(path.join(visibleDir, "manifest.json"), JSON.stringify(sampleManifest));
+      await fs.writeFile(
+        path.join(visibleDir, "state.json"),
+        JSON.stringify({
+          serviceId: "visible-service",
+          state: "enabled",
+          stateHistory: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          executionStats: { totalRuns: 0, successfulRuns: 0, failedRuns: 0 },
+        }),
+      );
+
+      // Create hidden directory
+      const hiddenDir = path.join(scanTempDir, ".hidden-service");
+      await fs.mkdir(hiddenDir, { recursive: true });
+      await fs.writeFile(
+        path.join(hiddenDir, "manifest.json"),
+        JSON.stringify({ ...sampleManifest, id: "hidden" }),
+      );
+
+      // @ts-expect-error - accessing private method for testing
+      const result = await scanRegistry.scanServiceDirectories();
+
+      expect(result).toHaveLength(1);
+      expect(result[0].serviceId).toBe("visible-service");
+    });
+
+    it("should skip non-directory entries (files)", async () => {
+      // Create service directory
+      const serviceDir = path.join(scanTempDir, "real-service");
+      await fs.mkdir(serviceDir, { recursive: true });
+      await fs.writeFile(path.join(serviceDir, "manifest.json"), JSON.stringify(sampleManifest));
+      await fs.writeFile(
+        path.join(serviceDir, "state.json"),
+        JSON.stringify({
+          serviceId: "real-service",
+          state: "enabled",
+          stateHistory: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          executionStats: { totalRuns: 0, successfulRuns: 0, failedRuns: 0 },
+        }),
+      );
+
+      // Create a file (not a directory)
+      await fs.writeFile(path.join(scanTempDir, "not-a-service.txt"), "test");
+
+      // @ts-expect-error - accessing private method for testing
+      const result = await scanRegistry.scanServiceDirectories();
+
+      expect(result).toHaveLength(1);
+      expect(result[0].serviceId).toBe("real-service");
+    });
+
+    it("should handle directories without manifest.json gracefully", async () => {
+      // Create directory without manifest
+      const incompleteDir = path.join(scanTempDir, "incomplete-service");
+      await fs.mkdir(incompleteDir, { recursive: true });
+      await fs.writeFile(
+        path.join(incompleteDir, "state.json"),
+        JSON.stringify({
+          serviceId: "incomplete-service",
+          state: "enabled",
+          stateHistory: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          executionStats: { totalRuns: 0, successfulRuns: 0, failedRuns: 0 },
+        }),
+      );
+
+      // @ts-expect-error - accessing private method for testing
+      const result = await scanRegistry.scanServiceDirectories();
+
+      // Should still include the directory but with null manifest
+      expect(result).toHaveLength(1);
+      expect(result[0].serviceId).toBe("incomplete-service");
+      expect(result[0].manifest).toBeNull();
+    });
+  });
+
+  // ============================================================================
+  // List with Directory Scanning
+  // ============================================================================
+
+  describe("list with directory scanning", () => {
+    // Helper function to create a service directory with manifest.json
+    async function createServiceDirectory(
+      baseDir: string,
+      serviceId: string,
+      manifest: Partial<ServiceManifest>,
+    ) {
+      const serviceDir = path.join(baseDir, serviceId);
+      await fs.mkdir(serviceDir, { recursive: true });
+
+      const fullManifest = {
+        $schema: "https://openclaw.ai/schemas/service-v1.json",
+        id: serviceId,
+        name: manifest.name || serviceId,
+        description: manifest.description || "Test service",
+        version: "1.0.0",
+        category: manifest.category || "productivity",
+        trigger: manifest.trigger || { type: "cron", schedule: "0 8 * * *" },
+        requires: {},
+        capabilities: {},
+        ...manifest,
+      };
+
+      await fs.writeFile(
+        path.join(serviceDir, "manifest.json"),
+        JSON.stringify(fullManifest, null, 2),
+      );
+
+      const configData = { config: {} };
+      await fs.writeFile(path.join(serviceDir, "config.json"), JSON.stringify(configData, null, 2));
+
+      const refsData = { agentId: `service:${serviceId}` };
+      await fs.writeFile(path.join(serviceDir, "refs.json"), JSON.stringify(refsData, null, 2));
+    }
+
+    it("should list all services from directory scanning without index.json", async () => {
+      // Create services directly on disk without using register() or index.json
+      await createServiceDirectory(tempDir, "service-a", {
+        name: "Service A",
+        category: "productivity",
+        trigger: { type: "cron", schedule: "0 8 * * *" },
+      });
+      await createServiceDirectory(tempDir, "service-b", {
+        name: "Service B",
+        category: "integration",
+        trigger: { type: "webhook", path: "/test" },
+      });
+      await createServiceDirectory(tempDir, "service-c", {
+        name: "Service C",
+        category: "automation",
+        trigger: { type: "message", channels: ["slack"] },
+      });
+
+      // Ensure index.json does not exist
+      const indexPath = path.join(tempDir, "index.json");
+      try {
+        await fs.unlink(indexPath);
+      } catch {
+        // Ignore if doesn't exist
+      }
+
+      const services = await registry.list();
+
+      expect(services).toHaveLength(3);
+      expect(services.map((s) => s.id).toSorted()).toEqual(["service-a", "service-b", "service-c"]);
+
+      // Verify ServiceIndexEntry structure
+      const serviceA = services.find((s) => s.id === "service-a");
+      expect(serviceA).toBeDefined();
+      expect(serviceA).toHaveProperty("id");
+      expect(serviceA).toHaveProperty("name");
+      expect(serviceA).toHaveProperty("triggerType");
+      expect(serviceA).toHaveProperty("category");
+      expect(serviceA).toHaveProperty("updatedAt");
+      expect(serviceA?.name).toBe("Service A");
+      expect(serviceA?.triggerType).toBe("cron");
+      expect(serviceA?.category).toBe("productivity");
+    });
+
+    it("should filter by category", async () => {
+      await createServiceDirectory(tempDir, "productivity-service", {
+        name: "Productivity Service",
+        category: "productivity",
+      });
+      await createServiceDirectory(tempDir, "integration-service", {
+        name: "Integration Service",
+        category: "integration",
+      });
+      await createServiceDirectory(tempDir, "automation-service", {
+        name: "Automation Service",
+        category: "automation",
+      });
+
+      const productivityServices = await registry.list({ category: "productivity" });
+      expect(productivityServices).toHaveLength(1);
+      expect(productivityServices[0].id).toBe("productivity-service");
+
+      const integrationServices = await registry.list({ category: "integration" });
+      expect(integrationServices).toHaveLength(1);
+      expect(integrationServices[0].id).toBe("integration-service");
+
+      const automationServices = await registry.list({ category: "automation" });
+      expect(automationServices).toHaveLength(1);
+      expect(automationServices[0].id).toBe("automation-service");
+    });
+
+    it("should filter by triggerType", async () => {
+      await createServiceDirectory(tempDir, "cron-service", {
+        name: "Cron Service",
+        trigger: { type: "cron", schedule: "0 8 * * *" },
+      });
+      await createServiceDirectory(tempDir, "webhook-service", {
+        name: "Webhook Service",
+        trigger: { type: "webhook", path: "/test" },
+      });
+      await createServiceDirectory(tempDir, "message-service", {
+        name: "Message Service",
+        trigger: { type: "message", channels: ["slack"] },
+      });
+
+      const cronServices = await registry.list({ triggerType: "cron" });
+      expect(cronServices).toHaveLength(1);
+      expect(cronServices[0].id).toBe("cron-service");
+
+      const webhookServices = await registry.list({ triggerType: "webhook" });
+      expect(webhookServices).toHaveLength(1);
+      expect(webhookServices[0].id).toBe("webhook-service");
+
+      const messageServices = await registry.list({ triggerType: "message" });
+      expect(messageServices).toHaveLength(1);
+      expect(messageServices[0].id).toBe("message-service");
+    });
+
+    it("should filter by search term (case-insensitive)", async () => {
+      await createServiceDirectory(tempDir, "my-test-service", { name: "My Test Service" });
+      await createServiceDirectory(tempDir, "another-service", { name: "Another Service" });
+      await createServiceDirectory(tempDir, "test-runner", { name: "Test Runner" });
+
+      // Search by name substring
+      const searchResults = await registry.list({ search: "test" });
+      expect(searchResults).toHaveLength(2);
+      expect(searchResults.map((s) => s.id).toSorted()).toEqual(["my-test-service", "test-runner"]);
+
+      // Search by id substring
+      const idSearchResults = await registry.list({ search: "another" });
+      expect(idSearchResults).toHaveLength(1);
+      expect(idSearchResults[0].id).toBe("another-service");
+
+      // Case insensitive search
+      const caseInsensitiveResults = await registry.list({ search: "TEST" });
+      expect(caseInsensitiveResults).toHaveLength(2);
+    });
+
+    it("should combine multiple filters", async () => {
+      await createServiceDirectory(tempDir, "enabled-cron-productivity", {
+        name: "Enabled Cron Productivity",
+        category: "productivity",
+        trigger: { type: "cron", schedule: "0 8 * * *" },
+      });
+      await createServiceDirectory(tempDir, "disabled-cron-productivity", {
+        name: "Disabled Cron Productivity",
+        category: "productivity",
+        trigger: { type: "cron", schedule: "0 9 * * *" },
+      });
+      await createServiceDirectory(tempDir, "enabled-webhook-productivity", {
+        name: "Enabled Webhook Productivity",
+        category: "productivity",
+        trigger: { type: "webhook", path: "/test" },
+      });
+      await createServiceDirectory(tempDir, "enabled-cron-integration", {
+        name: "Enabled Cron Integration",
+        category: "integration",
+        trigger: { type: "cron", schedule: "0 10 * * *" },
+      });
+
+      // Filter by category + triggerType
+      const results = await registry.list({
+        category: "productivity",
+        triggerType: "cron",
+      });
+      expect(results).toHaveLength(2);
+      expect(results.map((r) => r.id).toSorted()).toEqual([
+        "disabled-cron-productivity",
+        "enabled-cron-productivity",
+      ]);
+
+      // Filter by search
+      const searchResults = await registry.list({
+        search: "integration",
+      });
+      expect(searchResults).toHaveLength(1);
+      expect(searchResults[0].id).toBe("enabled-cron-integration");
+    });
+
+    it("should return empty array when no services match filters", async () => {
+      await createServiceDirectory(tempDir, "service-1", {
+        name: "Service 1",
+        category: "productivity",
+      });
+
+      const results = await registry.list({ category: "nonexistent" });
+      expect(results).toHaveLength(0);
+
+      const searchResults = await registry.list({ search: "nonexistent" });
+      expect(searchResults).toHaveLength(0);
+    });
+
+    it("should return empty array when services directory is empty", async () => {
+      const emptyRegistry = new ServiceRegistry({
+        fs,
+        servicesDir: tempDir,
+      });
+
+      const services = await emptyRegistry.list();
+      expect(services).toHaveLength(0);
+    });
+  });
+  // ============================================================================
   // Error Classes
   // ============================================================================
 
@@ -849,12 +1258,6 @@ describe("ServiceRegistry", () => {
       const error = new ServiceAlreadyExistsError("my-service");
       expect(error.name).toBe("ServiceAlreadyExistsError");
       expect(error.message).toBe("Service already exists: my-service");
-    });
-
-    it("InvalidStateTransitionError should have correct name", () => {
-      const error = new InvalidStateTransitionError("pending", "enabled");
-      expect(error.name).toBe("InvalidStateTransitionError");
-      expect(error.message).toBe("Invalid state transition from pending to enabled");
     });
   });
 });

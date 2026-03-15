@@ -630,19 +630,6 @@ export type LogEntry = {
 // Service Status Types
 // =============================================================================
 
-/** Service lifecycle states - 11 possible states */
-export type ServiceState =
-  | "pending"
-  | "validating"
-  | "installing"
-  | "installed"
-  | "enabled"
-  | "disabled"
-  | "error"
-  | "validation_error"
-  | "install_error"
-  | "uninstalling";
-
 /** Service category */
 export type ServiceCategory =
   | "productivity"
@@ -659,7 +646,6 @@ export type TriggerType = "cron" | "webhook" | "message" | "web";
 export type ServiceSummary = {
   id: string;
   name: string;
-  state: ServiceState;
   triggerType: TriggerType;
   category?: ServiceCategory;
   updatedAt: string;

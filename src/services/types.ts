@@ -13,27 +13,68 @@ export type ServiceCapability =
   | "tool";
 
 export type ServiceManifest = {
-  /** Unique service identifier (kebab-case recommended) */
   id: string;
-  /** Human-readable service name */
   name: string;
-  /** Semantic version */
   version: string;
-  /** Brief description of the service */
-  description: string;
-  /** Entry point for the service script (relative to service root) */
-  entry: string;
-  /** UI configuration */
+  description?: string;
+  entry?: string;
   ui?: {
-    /** Path to the HTML entry point (relative to service root) */
-    index: string;
+    index?: string;
+    entry?: string;
   };
-  /** Service capabilities */
-  capabilities?: ServiceCapability[];
-  /** Optional author information */
+  capabilities?:
+    | ServiceCapability[]
+    | {
+        network?: boolean;
+        filesystem?: boolean;
+        shell?: boolean;
+        browser?: boolean;
+        webhook?: boolean;
+        cron?: boolean;
+        message?: boolean;
+        web?: boolean;
+        privilegedTools?: string[];
+        requiresConfirmation?: string[];
+      };
   author?: string;
-  /** Optional license */
   license?: string;
+  category?: string;
+  trigger?: {
+    type: string;
+    [key: string]: unknown;
+  };
+  execution?: {
+    agentId?: string;
+    timeout?: number;
+    retries?: number;
+    concurrent?: boolean;
+    sessionTarget?: string;
+    retryPolicy?: Record<string, unknown>;
+  };
+  requires?: {
+    skills?: string[];
+    optionalSkills?: string[];
+    tools?: string[];
+    optionalTools?: string[];
+    services?: string[];
+    env?: string[];
+    config?: string[];
+  };
+  config?: Record<
+    string,
+    {
+      type: "string" | "number" | "boolean" | "array" | "object" | "secret";
+      required?: boolean;
+      default?: unknown;
+      description?: string;
+      enum?: string[];
+      items?: Record<string, unknown>;
+      properties?: Record<string, Record<string, unknown>>;
+      pattern?: string;
+      minimum?: number;
+      maximum?: number;
+    }
+  >;
 };
 
 export type ServiceDirectory = {
@@ -47,6 +88,8 @@ export type ServiceDirectory = {
   valid: boolean;
   /** Validation errors if invalid */
   errors?: string[];
+  /** Service type: 'traditional' for manifest.json, 'declarative' for service.json */
+  serviceType?: "traditional" | "declarative";
 };
 
 export type Service = {
@@ -72,9 +115,11 @@ export type ValidationResult =
       valid: true;
       errors?: undefined;
       manifest: ServiceManifest;
+      serviceType?: "traditional" | "declarative";
     }
   | {
       valid: false;
       errors: string[];
       manifest?: undefined;
+      serviceType?: "traditional" | "declarative";
     };

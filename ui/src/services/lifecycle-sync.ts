@@ -10,8 +10,6 @@ import {
   type LifecycleHooks,
   type ServiceProcessInstance,
   type ServiceProcessState,
-  ServiceNotFoundError,
-  ServiceLifecycleError,
 } from "../../../src/services/lifecycle.js";
 import type { ServiceModal } from "../components/service-modal.js";
 
@@ -197,7 +195,7 @@ export class LifecycleSyncManager {
       // Still try to stop the service if it's running
       try {
         await this.stopServiceIfRunning(serviceId);
-      } catch (error) {
+      } catch {
         // Service might not be running, that's okay
       }
       return;
@@ -268,13 +266,13 @@ export class LifecycleSyncManager {
    */
   dispose(): void {
     // Clear all timeouts
-    for (const [key, timeout] of this.pendingTimeouts) {
+    for (const [, timeout] of this.pendingTimeouts) {
       clearTimeout(timeout);
     }
     this.pendingTimeouts.clear();
 
     // Unregister all hooks
-    for (const [serviceId, unregister] of this.hooksRegistry) {
+    for (const [, unregister] of this.hooksRegistry) {
       unregister();
     }
     this.hooksRegistry.clear();
@@ -290,11 +288,15 @@ export class LifecycleSyncManager {
   private registerLifecycleHooks(serviceId: string, modal: ServiceModal): () => void {
     const hooks: LifecycleHooks = {
       onStateChange: (id: string, oldState: ServiceProcessState, newState: ServiceProcessState) => {
-        if (id !== serviceId) {return;}
+        if (id !== serviceId) {
+          return;
+        }
         this.handleServiceStateChange(serviceId, modal, oldState, newState);
       },
       onUnexpectedExit: (id: string, instance: ServiceProcessInstance, exitCode: number | null) => {
-        if (id !== serviceId) {return;}
+        if (id !== serviceId) {
+          return;
+        }
         this.handleUnexpectedExit(serviceId, modal, instance, exitCode);
       },
     };
@@ -312,7 +314,9 @@ export class LifecycleSyncManager {
     newState: ServiceProcessState,
   ): void {
     const syncState = this.syncStates.get(serviceId);
-    if (!syncState) {return;}
+    if (!syncState) {
+      return;
+    }
 
     switch (newState) {
       case "error":
@@ -347,7 +351,9 @@ export class LifecycleSyncManager {
     exitCode: number | null,
   ): void {
     const syncState = this.syncStates.get(serviceId);
-    if (!syncState) {return;}
+    if (!syncState) {
+      return;
+    }
 
     if (modal.isOpen()) {
       const errorMessage = `Service stopped unexpectedly${exitCode !== null ? ` (exit code: ${exitCode})` : ""}`;
@@ -380,7 +386,9 @@ export class LifecycleSyncManager {
    */
   private handleStartTimeout(serviceId: string, modal: ServiceModal): void {
     const syncState = this.syncStates.get(serviceId);
-    if (!syncState) {return;}
+    if (!syncState) {
+      return;
+    }
 
     syncState.pendingOperation = null;
 

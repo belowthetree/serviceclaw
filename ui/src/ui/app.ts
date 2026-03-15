@@ -59,8 +59,6 @@ import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import type { ExecApprovalsFile, ExecApprovalsSnapshot } from "./controllers/exec-approvals.ts";
 import {
   loadServices as loadServicesController,
-  enableService as enableServiceController,
-  disableService as disableServiceController,
   type ServicesStatusState,
 } from "./controllers/services-status.js";
 import type { SkillMessage } from "./controllers/skills.ts";
@@ -354,9 +352,8 @@ export class OpenClawApp extends LitElement {
   @state() skillsReport: SkillStatusReport | null = null;
   @state() skillsError: string | null = null;
   @state() servicesLoading = false;
+  @state() services: ServiceWithStats[] = [];
   @state() servicesError: string | null = null;
-  @state() services: import("./types.js").ServiceWithStats[] = [];
-  @state() servicesBusyId: string | null = null;
   @state() skillsFilter = "";
   @state() skillEdits: Record<string, string> = {};
   @state() skillsBusyKey: string | null = null;
@@ -493,7 +490,6 @@ export class OpenClawApp extends LitElement {
       servicesLoading: this.servicesLoading,
       services: this.services,
       servicesError: this.servicesError,
-      servicesBusyId: this.servicesBusyId,
     };
   }
 
@@ -503,24 +499,6 @@ export class OpenClawApp extends LitElement {
     this.servicesLoading = state.servicesLoading;
     this.services = state.services;
     this.servicesError = state.servicesError;
-  };
-
-  enableService = async (serviceId: string) => {
-    const state = this.getServicesState();
-    await enableServiceController(state, serviceId);
-    this.servicesLoading = state.servicesLoading;
-    this.services = state.services;
-    this.servicesError = state.servicesError;
-    this.servicesBusyId = state.servicesBusyId;
-  };
-
-  disableService = async (serviceId: string) => {
-    const state = this.getServicesState();
-    await disableServiceController(state, serviceId);
-    this.servicesLoading = state.servicesLoading;
-    this.services = state.services;
-    this.servicesError = state.servicesError;
-    this.servicesBusyId = state.servicesBusyId;
   };
 
   applySettings(next: UiSettings) {

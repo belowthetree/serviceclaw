@@ -6,12 +6,15 @@ import type { CliDeps } from "../cli/deps.js";
 import type { createSubsystemLogger } from "../logging/subsystem.js";
 import type { PluginRegistry } from "../plugins/registry.js";
 import type { RuntimeEnv } from "../runtime.js";
+import type { ServiceLifecycleManager } from "../services/lifecycle.js";
+import type { SCPServer } from "../services/scp-server.js";
 import type { AuthRateLimiter } from "./auth-rate-limit.js";
 import type { ResolvedGatewayAuth } from "./auth.js";
 import type { ChatAbortControllerEntry } from "./chat-abort.js";
 import type { ControlUiRootState } from "./control-ui.js";
 import type { HooksConfigResolved } from "./hooks.js";
 import { isLoopbackHost, resolveGatewayListenHosts } from "./net.js";
+import { createGatewaySCPServer } from "./scp-handlers.js";
 import {
   createGatewayBroadcaster,
   type GatewayBroadcastFn,
@@ -63,6 +66,7 @@ export async function createGatewayRuntimeState(params: {
   logHooks: ReturnType<typeof createSubsystemLogger>;
   logPlugins: ReturnType<typeof createSubsystemLogger>;
   getReadiness?: ReadinessChecker;
+  serviceLifecycleManager?: ServiceLifecycleManager | null;
 }): Promise<{
   canvasHost: CanvasHostHandler | null;
   httpServer: HttpServer;
@@ -85,6 +89,7 @@ export async function createGatewayRuntimeState(params: {
   ) => ChatRunEntry | undefined;
   chatAbortControllers: Map<string, ChatAbortControllerEntry>;
   toolEventRecipients: ReturnType<typeof createToolEventRecipientRegistry>;
+  serviceLifecycleManager: ServiceLifecycleManager | null;
 }> {
   let canvasHost: CanvasHostHandler | null = null;
   if (params.canvasHostEnabled) {
@@ -141,6 +146,11 @@ export async function createGatewayRuntimeState(params: {
   }
   const httpServers: HttpServer[] = [];
   const httpBindHosts: string[] = [];
+
+  const scpServer: SCPServer = createGatewaySCPServer({
+    logger: params.logHooks,
+  });
+
   for (const host of bindHosts) {
     const httpServer = createGatewayHttpServer({
       canvasHost,
@@ -193,6 +203,7 @@ export async function createGatewayRuntimeState(params: {
       wss,
       canvasHost,
       clients,
+      scpServer,
       resolvedAuth: params.resolvedAuth,
       rateLimiter: params.rateLimiter,
     });
@@ -227,5 +238,6 @@ export async function createGatewayRuntimeState(params: {
     removeChatRun,
     chatAbortControllers,
     toolEventRecipients,
+    serviceLifecycleManager: params.serviceLifecycleManager ?? null,
   };
 }

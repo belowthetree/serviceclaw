@@ -91,7 +91,9 @@ const createMockLifecycleManager = () => {
       hooks.push(hook);
       return () => {
         const index = hooks.indexOf(hook);
-        if (index > -1) {hooks.splice(index, 1);}
+        if (index > -1) {
+          hooks.splice(index, 1);
+        }
       };
     }),
 

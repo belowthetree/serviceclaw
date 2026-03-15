@@ -22,6 +22,8 @@ import { loadInternalHooks } from "../hooks/loader.js";
 import { isTruthyEnvValue } from "../infra/env.js";
 import type { loadOpenClawPlugins } from "../plugins/loader.js";
 import { type PluginServicesHandle, startPluginServices } from "../plugins/services.js";
+import { getDefaultServicesDir } from "../services/discovery.js";
+import { ServiceLifecycleManager } from "../services/lifecycle.js";
 import { startBrowserControlServerIfEnabled } from "./server-browser.js";
 import {
   scheduleRestartSentinelWake,
@@ -187,5 +189,18 @@ export async function startGatewaySidecars(params: {
     }, 750);
   }
 
-  return { browserControl, pluginServices };
+  // Create ServiceLifecycleManager for managing service processes
+  let serviceLifecycleManager: ServiceLifecycleManager | null = null;
+  try {
+    serviceLifecycleManager = new ServiceLifecycleManager({
+      servicesDir: getDefaultServicesDir(),
+      sessionId: "gateway",
+      backendId: "local",
+    });
+    params.log.warn("service lifecycle manager initialized");
+  } catch (err) {
+    params.log.warn(`service lifecycle manager failed to initialize: ${String(err)}`);
+  }
+
+  return { browserControl, pluginServices, serviceLifecycleManager };
 }

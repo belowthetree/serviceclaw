@@ -6,13 +6,14 @@ import {
 } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import type { TlsOptions } from "node:tls";
-import type { WebSocketServer } from "ws";
+import { WebSocketServer } from "ws";
 import { resolveAgentAvatar } from "../agents/identity-avatar.js";
 import { CANVAS_WS_PATH, handleA2uiHttpRequest } from "../canvas-host/a2ui.js";
 import type { CanvasHostHandler } from "../canvas-host/server.js";
 import { loadConfig } from "../config/config.js";
 import type { createSubsystemLogger } from "../logging/subsystem.js";
 import { safeEqualSecret } from "../security/secret-equal.js";
+import type { SCPServer } from "../services/scp-server.js";
 import { handleSlackHttpRequest } from "../slack/http/index.js";
 import {
   AUTH_RATE_LIMIT_SCOPE_HOOK_AUTH,
@@ -54,6 +55,7 @@ import { sendGatewayAuthFailure, setDefaultSecurityHeaders } from "./http-common
 import { getBearerToken } from "./http-utils.js";
 import { handleOpenAiHttpRequest } from "./openai-http.js";
 import { handleOpenResponsesHttpRequest } from "./openresponses-http.js";
+import { SCP_WS_PATH } from "./server-constants.js";
 import {
   authorizeCanvasRequest,
   enforcePluginRouteGatewayAuth,
@@ -67,8 +69,8 @@ import {
 } from "./server/plugins-http.js";
 import type { ReadinessChecker } from "./server/readiness.js";
 import type { GatewayWsClient } from "./server/ws-types.js";
-import { handleToolsInvokeHttpRequest } from "./tools-invoke-http.js";
 import { handleServicesHttpRequest } from "./services-http.js";
+import { handleToolsInvokeHttpRequest } from "./tools-invoke-http.js";
 
 type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
 
@@ -799,6 +801,7 @@ export function attachGatewayUpgradeHandler(opts: {
   resolvedAuth: ResolvedGatewayAuth;
   /** Optional rate limiter for auth brute-force protection. */
   rateLimiter?: AuthRateLimiter;
+  scpServer?: SCPServer;
 }) {
   const { httpServer, wss, canvasHost, clients, resolvedAuth, rateLimiter } = opts;
   httpServer.on("upgrade", (req, socket, head) => {
@@ -814,6 +817,16 @@ export function attachGatewayUpgradeHandler(opts: {
       }
       if (canvasHost) {
         const url = new URL(req.url ?? "/", "http://localhost");
+        if (url.pathname === SCP_WS_PATH) {
+          if (opts.scpServer) {
+            const wss = new WebSocketServer({ noServer: true });
+            wss.handleUpgrade(req, socket, head, (ws) => {
+              ws.once("close", () => wss.close());
+              opts.scpServer?.handleUpgrade(req, ws);
+            });
+            return;
+          }
+        }
         if (url.pathname === CANVAS_WS_PATH) {
           const configSnapshot = loadConfig();
           const trustedProxies = configSnapshot.gateway?.trustedProxies ?? [];

@@ -1,5 +1,6 @@
 import type { ServiceModal } from "../components/service-modal.js";
 import "../components/service-modal.js";
+import type { GatewayBrowserClient } from "../ui/gateway.js";
 
 export class LifecycleSyncError extends Error {
   constructor(
@@ -25,8 +26,6 @@ export interface LifecycleSyncOptions {
   startTimeout?: number;
   stopTimeout?: number;
 }
-
-type ServiceLifecycleManager = unknown;
 
 const syncStates = new Map<string, SyncState>();
 const modalRegistry = new Map<string, ServiceModal>();
@@ -69,7 +68,7 @@ function getOrCreateModal(serviceId: string): ServiceModal {
 export function syncModalWithService(
   modal: ServiceModal,
   serviceId: string,
-  _lifecycleManager?: ServiceLifecycleManager,
+  _gatewayClient?: GatewayBrowserClient,
 ): () => void {
   modalRegistry.set(serviceId, modal);
   syncStates.set(serviceId, {
@@ -108,7 +107,7 @@ async function waitForModalReady(modal: ServiceModal): Promise<void> {
 export async function openServiceModal(
   serviceId: string,
   serviceName: string,
-  _lifecycleManager?: ServiceLifecycleManager,
+  gatewayClient?: GatewayBrowserClient,
 ): Promise<void> {
   console.log("[lifecycle-sync] openServiceModal called:", serviceId, serviceName);
   const modal = getOrCreateModal(serviceId);
@@ -130,6 +129,12 @@ export async function openServiceModal(
   syncStates.set(serviceId, syncState);
 
   try {
+    if (gatewayClient) {
+      console.log("[lifecycle-sync] Starting service via Gateway API...");
+      await gatewayClient.startService(serviceId);
+      console.log("[lifecycle-sync] Service started successfully");
+    }
+
     console.log("[lifecycle-sync] Waiting for modal to be ready...");
     await waitForModalReady(modal);
     console.log("[lifecycle-sync] Modal ready, calling open()...");
@@ -138,7 +143,9 @@ export async function openServiceModal(
 
     setTimeout(() => {
       if ((modal as unknown as { _state?: string })._state === "loading") {
-        (modal as unknown as { setError?: (msg: string) => void }).setError?.("Service failed to start within timeout period");
+        (modal as unknown as { setError?: (msg: string) => void }).setError?.(
+          "Service failed to start within timeout period",
+        );
       }
     }, defaultOptions.startTimeout);
 
@@ -157,6 +164,7 @@ export async function openServiceModal(
     syncState.pendingOperation = null;
     syncStates.set(serviceId, syncState);
   } catch (error) {
+    console.error("[lifecycle-sync] Failed to start service:", error);
     syncState.pendingOperation = null;
     syncStates.set(serviceId, syncState);
     throw error;
@@ -165,7 +173,7 @@ export async function openServiceModal(
 
 export async function closeServiceModal(
   serviceId: string,
-  _lifecycleManager?: ServiceLifecycleManager,
+  _gatewayClient?: GatewayBrowserClient,
 ): Promise<void> {
   const modal = modalRegistry.get(serviceId);
   if (modal) {

@@ -1,3 +1,4 @@
 export * from "./types.js";
-export { ServiceClient, ServiceClientOptions } from "./client.js";
+export { ServiceClient } from "./client.js";
+export type { ServiceClientOptions } from "./client.js";
 export { default } from "./client.js";

@@ -12,7 +12,7 @@
  */
 
 import { formatErrorMessage } from "../infra/errors.js";
-import type { InstallationPhase, ServiceRuntimeRefs, ServiceState } from "./lifecycle.js";
+import type { InstallationPhase, ServiceRuntimeRefs } from "./lifecycle.js";
 import type { ServiceManifest, TriggerType } from "./schema.js";
 
 // =============================================================================
@@ -295,47 +295,6 @@ export class ServiceInstallationError extends ServiceError {
     this.name = "ServiceInstallationError";
     this.phase = options.phase;
     this.completedPhases = options.completedPhases ?? [];
-  }
-}
-
-/**
- * Error for invalid state transitions
- */
-export class ServiceStateError extends ServiceError {
-  /** Current service state */
-  public readonly currentState: ServiceState;
-
-  /** Attempted transition */
-  public readonly attemptedTransition: string;
-
-  /** Valid transitions from current state */
-  public readonly validTransitions: ServiceState[];
-
-  constructor(options: {
-    message: string;
-    serviceId: string;
-    currentState: ServiceState;
-    attemptedTransition: string;
-    validTransitions: ServiceState[];
-  }) {
-    super({
-      message: options.message,
-      serviceId: options.serviceId,
-      category: "state",
-      severity: "warning",
-      code: "SERVICE_INVALID_STATE_TRANSITION",
-    });
-    this.name = "ServiceStateError";
-    this.currentState = options.currentState;
-    this.attemptedTransition = options.attemptedTransition;
-    this.validTransitions = options.validTransitions;
-  }
-
-  /**
-   * Get a formatted list of valid next states
-   */
-  getValidTransitionsText(): string {
-    return this.validTransitions.join(", ") || "none";
   }
 }
 
@@ -788,10 +747,6 @@ export function getRecoverySuggestions(error: ServiceError): string[] {
 
   // Add specific suggestions based on error type
   const specificSuggestions: string[] = [];
-
-  if (error instanceof ServiceStateError) {
-    specificSuggestions.push(`Valid next states: ${error.getValidTransitionsText()}`);
-  }
 
   if (error instanceof ServiceRollbackError && !error.isComplete()) {
     specificSuggestions.push(

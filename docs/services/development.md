@@ -97,7 +97,7 @@ This service sends a greeting every morning at 9 AM.
 
 openclaw service install ./service.json
 
-```
+````
 
 ## Understanding Services
 
@@ -116,33 +116,186 @@ Services reuse OpenClaw's existing infrastructure. They do not create new runtim
 - Message subscriptions via channel hooks
 - Agent sessions for execution
 
+### The Two Service Types
+
+OpenClaw supports two distinct service types, each suited for different automation patterns:
+
+#### Traditional Service (Long-Running Process)
+
+A Traditional Service is a long-running process that continuously executes in the background. It uses a `manifest.json` file and is ideal for services that need to:
+
+- Monitor systems continuously
+- Process streams of data
+- Run background workers
+- Maintain persistent connections
+
+Traditional Services are installed and started like a daemon:
+
+```bash
+openclaw service install ./manifest.json
+openclaw service start <service-id>
+````
+
+#### Declarative Service (Trigger-Based)
+
+A Declarative Service is event-driven and only executes when triggered. It uses a `service.json` file and is ideal for services that need to:
+
+- Run on a schedule (cron)
+- Respond to webhooks
+- React to messages
+- Provide dashboard functionality
+
+Declarative Services are installed and enabled:
+
+```bash
+openclaw service install ./service.json
+openclaw service enable <service-id>
+```
+
+### Service Type Comparison
+
+| Aspect              | Traditional Service                        | Declarative Service                       |
+| ------------------- | ------------------------------------------ | ----------------------------------------- |
+| **Manifest file**   | `manifest.json`                            | `service.json`                            |
+| **Execution model** | Long-running process                       | Trigger-based (on-demand)                 |
+| **Lifecycle**       | Start/stop                                 | Enable/disable                            |
+| **Triggers**        | Internal logic                             | Cron, webhook, message, web UI            |
+| **Use case**        | Continuous monitoring                      | Scheduled/reactive tasks                  |
+| **CLI install**     | `openclaw service install ./manifest.json` | `openclaw service install ./service.json` |
+| **CLI control**     | `--start`, `--stop`                        | `--enable`, `--disable`                   |
+
 ### Service vs Extension
 
-| Aspect | Extension | Service |
-|--------|-----------|---------|
-| Code | Contains implementation | References existing tools |
-| Audience | Developers | Non-technical users |
-| Distribution | NPM package | Service manifest + skill |
-| Installation | `npm install` | `openclaw service install` |
-| Runtime | May have custom runtime | Uses existing infrastructure |
+| Aspect       | Extension               | Service                      |
+| ------------ | ----------------------- | ---------------------------- |
+| Code         | Contains implementation | References existing tools    |
+| Audience     | Developers              | Non-technical users          |
+| Distribution | NPM package             | Service manifest + skill     |
+| Installation | `npm install`           | `openclaw service install`   |
+| Runtime      | May have custom runtime | Uses existing infrastructure |
 
 ## Service Project Structure
 
 A complete Service project looks like this:
 
 ```
-
 my-service/
-├── service.json # Service manifest (required)
-├── README.md # Documentation for users
-├── CHANGELOG.md # Version history
+├── service.json          # Service manifest (required for Declarative)
+├── manifest.json         # Service manifest (required for Traditional)
+├── README.md             # Documentation for users
+├── CHANGELOG.md          # Version history
 └── skills/
-└── my-service/ # Skill directory
-└── SKILL.md # Agent instructions (required)
+    └── my-service/       # Skill directory
+        └── SKILL.md      # Agent instructions (required)
+```
 
-````
+## Writing the Traditional Service Manifest (manifest.json)
 
-## Writing the Service Manifest
+Traditional Services use `manifest.json` to define a long-running process.
+
+### Minimal Example
+
+```json
+{
+  "$schema": "https://openclaw.ai/schemas/service-manifest-v1.json",
+  "id": "log-monitor",
+  "name": "Log Monitor",
+  "description": "Continuously monitors log files for errors",
+  "version": "1.0.0",
+  "type": "traditional",
+  "entry": {
+    "command": "node",
+    "args": ["./monitor.js"]
+  },
+  "config": {
+    "logPath": {
+      "type": "string",
+      "description": "Path to log file to monitor",
+      "required": true
+    },
+    "checkInterval": {
+      "type": "number",
+      "description": "Check interval in seconds",
+      "default": 30
+    }
+  },
+  "requires": {
+    "tools": ["message.send"]
+  },
+  "capabilities": {
+    "privilegedTools": ["message.send"],
+    "network": false,
+    "filesystem": true
+  }
+}
+```
+
+### Key manifest.json Fields
+
+| Field          | Description                                 |
+| -------------- | ------------------------------------------- |
+| `id`           | Unique identifier (kebab-case)              |
+| `type`         | Must be `"traditional"`                     |
+| `entry`        | Command and arguments to start the process  |
+| `config`       | Configuration schema for user customization |
+| `requires`     | Required tools, skills, and environment     |
+| `capabilities` | Security declarations                       |
+
+### Entry Configuration
+
+Define how the service process starts:
+
+```json
+{
+  "entry": {
+    "command": "node",
+    "args": ["./index.js", "--config", "${configPath}"],
+    "env": {
+      "NODE_ENV": "production",
+      "LOG_LEVEL": "${config.logLevel}"
+    },
+    "workingDirectory": "${serviceDir}",
+    "restartPolicy": {
+      "onFailure": true,
+      "maxRetries": 5,
+      "backoffMs": 5000
+    }
+  }
+}
+```
+
+## Comparing manifest.json and service.json
+
+Understanding the differences between these two manifest files helps you choose the right approach:
+
+| Feature              | manifest.json (Traditional)    | service.json (Declarative)             |
+| -------------------- | ------------------------------ | -------------------------------------- |
+| **Purpose**          | Defines a long-running process | Defines trigger-based execution        |
+| **Required field**   | `type: "traditional"`          | `trigger` configuration                |
+| **Execution**        | Process stays running          | Executes only when triggered           |
+| **Entry point**      | `entry` command required       | No entry command (uses triggers)       |
+| **Triggers**         | Not defined (internal logic)   | Required (cron, webhook, message, web) |
+| **Lifecycle**        | Start/stop process             | Enable/disable triggers                |
+| **Resource use**     | Continuous while running       | Only during execution                  |
+| **Restart behavior** | Configured via `restartPolicy` | Not applicable (trigger-driven)        |
+
+### When to Use Each
+
+**Use manifest.json (Traditional) when:**
+
+- You need continuous monitoring or polling
+- The service maintains persistent connections
+- You are building a background worker or daemon
+- The service needs to react to internal events in real-time
+
+**Use service.json (Declarative) when:**
+
+- You want scheduled execution (cron)
+- You need webhook endpoints
+- The service reacts to channel messages
+- You prefer event-driven architecture
+
+## Writing the Declarative Service Manifest (service.json)
 
 The `service.json` file defines everything about your Service.
 
@@ -167,7 +320,7 @@ The `service.json` file defines everything about your Service.
     "network": false
   }
 }
-````
+```
 
 ### Identity Fields
 
@@ -688,21 +841,64 @@ openclaw service run <service-id> --dry-run
 
 ### Manage Service State
 
+The CLI commands differ based on the service type:
+
+#### Traditional Services (manifest.json)
+
+Use `--start` and `--stop` to control the long-running process:
+
 ```bash
-# List all Services
-openclaw service list
+# Start the service process
+openclaw service start <service-id>
 
-# Enable a Service
-openclaw service enable <service-id>
+# Stop the service process
+openclaw service stop <service-id>
 
-# Disable a Service
-openclaw service disable <service-id>
+# Restart the service
+openclaw service restart <service-id>
 
-# Check status
+# Check if process is running
 openclaw service status <service-id>
 
-# View logs
+# View process logs
 openclaw service logs <service-id> --follow
+```
+
+#### Declarative Services (service.json)
+
+Use `--enable` and `--disable` to control trigger registration:
+
+```bash
+# Enable triggers (activate the service)
+openclaw service enable <service-id>
+
+# Disable triggers (deactivate the service)
+openclaw service disable <service-id>
+
+# Run manually (trigger execution)
+openclaw service run <service-id>
+
+# Check trigger status
+openclaw service status <service-id>
+
+# View execution logs
+openclaw service logs <service-id> --follow
+```
+
+#### Common Commands (Both Types)
+
+```bash
+# List all installed services
+openclaw service list
+
+# Show detailed status
+openclaw service status <service-id> --verbose
+
+# Uninstall a service
+openclaw service uninstall <service-id>
+
+# Force uninstall (use when normal uninstall fails)
+openclaw service uninstall <service-id> --force
 ```
 
 ### Uninstall a Service

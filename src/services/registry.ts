@@ -20,37 +20,31 @@
  * @see docs/services/architecture.md
  */
 
+import { exec } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import JSON5 from "json5";
 import { CONFIG_DIR } from "../utils.js";
-import type { ServiceManifest, ServiceConfig, ServiceCategory, TriggerType } from "./schema.js";
+import type {
+  ServiceManifest,
+  ServiceConfig,
+  ServiceCategory,
+  TriggerType,
+  ServiceType,
+} from "./schema.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+import { isDeclarativeService } from "./schema.js";
+
+const execAsync = promisify(exec);
 
 // =============================================================================
 // Types
 // =============================================================================
-
-/** Service lifecycle states */
-export type ServiceState =
-  | "pending" // Service created but not yet validated
-  | "validating" // Checking requirements, dependencies
-  | "installing" // Creating cron jobs, webhooks, etc.
-  | "installed" // All resources created, but not running
-  | "enabled" // Service is active and processing triggers
-  | "disabled" // Installed but not processing triggers
-  | "error" // Runtime error occurred
-  | "validation_error" // Requirements not met
-  | "install_error" // Installation failed, rolled back
-  | "uninstalling"; // Cleaning up resources
-
-/** State transition record */
-export interface StateTransition {
-  from: ServiceState;
-  to: ServiceState;
-  timestamp: string;
-  reason?: string;
-}
 
 /** Execution statistics */
 export interface ServiceExecutionStats {
@@ -85,10 +79,6 @@ export interface ServiceInstance {
   id: string;
   /** Original service manifest */
   manifest: ServiceManifest;
-  /** Current service state */
-  state: ServiceState;
-  /** State transition history */
-  stateHistory: StateTransition[];
   /** User configuration values */
   config: ServiceConfig;
   /** When the service was first created */
@@ -103,13 +93,14 @@ export interface ServiceInstance {
   lastRunAt?: string;
   /** Next scheduled run timestamp */
   nextRunAt?: string;
+  /** Service type: traditional or declarative */
+  serviceType: ServiceType;
 }
 
 /** Registry index entry for fast lookup */
 export interface ServiceIndexEntry {
   id: string;
   name: string;
-  state: ServiceState;
   triggerType: TriggerType;
   category?: ServiceCategory;
   updatedAt: string;
@@ -119,18 +110,6 @@ export interface ServiceIndexEntry {
 export interface ServiceRegistryIndex {
   version: 1;
   services: ServiceIndexEntry[];
-}
-
-/** State file structure (persisted to state.json) */
-export interface ServiceStateFile {
-  serviceId: string;
-  state: ServiceState;
-  stateHistory: StateTransition[];
-  createdAt: string;
-  updatedAt: string;
-  executionStats: ServiceExecutionStats;
-  lastRunAt?: string;
-  nextRunAt?: string;
 }
 
 /** Refs file structure (persisted to refs.json) */
@@ -147,8 +126,6 @@ export interface ServiceRefsFile {
 
 /** Options for listing services */
 export interface ListServicesOptions {
-  /** Filter by state */
-  state?: ServiceState;
   /** Filter by category */
   category?: ServiceCategory;
   /** Filter by trigger type */
@@ -186,37 +163,17 @@ export class ServiceAlreadyExistsError extends ServiceRegistryError {
   }
 }
 
-export class InvalidStateTransitionError extends ServiceRegistryError {
-  constructor(from: ServiceState, to: ServiceState) {
-    super(`Invalid state transition from ${from} to ${to}`);
-    this.name = "InvalidStateTransitionError";
-  }
-}
-
 // =============================================================================
 // Constants
 // =============================================================================
 
 export const DEFAULT_SERVICES_DIR = path.join(CONFIG_DIR, "services");
+/** @deprecated Index file is no longer used. Kept for backward compatibility. */
 export const INDEX_FILENAME = "index.json";
 export const MANIFEST_FILENAME = "manifest.json";
 export const CONFIG_FILENAME = "config.json";
 export const STATE_FILENAME = "state.json";
 export const REFS_FILENAME = "refs.json";
-
-// Valid state transitions
-const VALID_STATE_TRANSITIONS: Record<ServiceState, ServiceState[]> = {
-  pending: ["validating", "validation_error", "uninstalling"],
-  validating: ["installing", "validation_error"],
-  installing: ["installed", "install_error"],
-  installed: ["enabled", "disabled", "uninstalling"],
-  enabled: ["disabled", "error"],
-  disabled: ["enabled", "uninstalling"],
-  error: ["disabled", "validating"],
-  validation_error: ["validating", "uninstalling"],
-  install_error: ["validating", "uninstalling"],
-  uninstalling: [],
-};
 
 // =============================================================================
 // ServiceRegistry Class
@@ -229,8 +186,6 @@ export interface ServiceRegistryDeps {
 
 export class ServiceRegistry {
   private deps: ServiceRegistryDeps;
-  private indexCache: ServiceRegistryIndex | null = null;
-  private indexCacheValid = false;
 
   constructor(deps: Partial<ServiceRegistryDeps> = {}) {
     this.deps = {
@@ -263,6 +218,7 @@ export class ServiceRegistry {
     return path.join(this.getServiceDir(serviceId), REFS_FILENAME);
   }
 
+  /** @deprecated Index file is no longer used. Kept for backward compatibility. */
   private getIndexPath(): string {
     return path.join(this.deps.servicesDir, INDEX_FILENAME);
   }
@@ -319,87 +275,44 @@ export class ServiceRegistry {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Index Management
-  // ---------------------------------------------------------------------------
+  private async scanServiceDirectories(): Promise<
+    Array<{ serviceId: string; manifest: ServiceManifest | null }>
+  > {
+    const results: Array<{ serviceId: string; manifest: ServiceManifest | null }> = [];
 
-  private async loadIndex(): Promise<ServiceRegistryIndex> {
-    if (this.indexCacheValid && this.indexCache) {
-      return this.indexCache;
+    try {
+      await this.ensureServicesDir();
+      const entries = await this.deps.fs.readdir(this.deps.servicesDir, { withFileTypes: true });
+
+      for (const entry of entries) {
+        if (!entry.isDirectory() || entry.name.startsWith(".")) {
+          continue;
+        }
+        if (this.shouldSkipDirectory(entry.name)) {
+          continue;
+        }
+
+        const serviceId = entry.name;
+        const manifest = await this.readJsonFile<ServiceManifest>(
+          this.getManifestPath(serviceId),
+        ).catch(() => null);
+        results.push({ serviceId, manifest });
+      }
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if (code === "ENOENT") {
+        return [];
+      }
+      throw err;
     }
 
-    const indexPath = this.getIndexPath();
-    const index = await this.readJsonFile<ServiceRegistryIndex>(indexPath);
-
-    if (index && index.version === 1) {
-      this.indexCache = index;
-      this.indexCacheValid = true;
-      return index;
-    }
-
-    // Create new index
-    const newIndex: ServiceRegistryIndex = { version: 1, services: [] };
-    this.indexCache = newIndex;
-    this.indexCacheValid = true;
-    return newIndex;
+    return results;
   }
 
-  private async saveIndex(index: ServiceRegistryIndex): Promise<void> {
-    await this.ensureServicesDir();
-    await this.writeJsonFile(this.getIndexPath(), index);
-    this.indexCache = index;
-    this.indexCacheValid = true;
-  }
-
-  private async updateIndexEntry(service: ServiceInstance): Promise<void> {
-    const index = await this.loadIndex();
-    const entry: ServiceIndexEntry = {
-      id: service.id,
-      name: service.manifest.name,
-      state: service.state,
-      triggerType: service.manifest.trigger.type,
-      category: service.manifest.category,
-      updatedAt: service.updatedAt,
-    };
-
-    const existingIndex = index.services.findIndex((s) => s.id === service.id);
-    if (existingIndex >= 0) {
-      index.services[existingIndex] = entry;
-    } else {
-      index.services.push(entry);
-    }
-
-    await this.saveIndex(index);
-  }
-
-  private async removeIndexEntry(serviceId: string): Promise<void> {
-    const index = await this.loadIndex();
-    index.services = index.services.filter((s) => s.id !== serviceId);
-    await this.saveIndex(index);
-  }
-
-  private invalidateCache(): void {
-    this.indexCacheValid = false;
-  }
-
-  // ---------------------------------------------------------------------------
-  // State Management
-  // ---------------------------------------------------------------------------
-
-  private isValidStateTransition(from: ServiceState, to: ServiceState): boolean {
-    if (from === to) {
-      return true;
-    }
-    const validTransitions = VALID_STATE_TRANSITIONS[from];
-    return validTransitions?.includes(to) ?? false;
-  }
-
-  private async loadState(serviceId: string): Promise<ServiceStateFile | null> {
-    return this.readJsonFile<ServiceStateFile>(this.getStatePath(serviceId));
-  }
-
-  private async saveState(state: ServiceStateFile): Promise<void> {
-    await this.writeJsonFile(this.getStatePath(state.serviceId), state);
+  private shouldSkipDirectory(dirName: string): boolean {
+    const normalized = dirName.toLowerCase();
+    const skipPatterns = ["node_modules", "dist", "build", "__tests__", "__mocks__"];
+    return skipPatterns.some((p) => normalized === p || normalized.includes(p));
   }
 
   private async loadRefs(serviceId: string): Promise<ServiceRefsFile | null> {
@@ -418,12 +331,14 @@ export class ServiceRegistry {
    * Register a new service
    * @param manifest - Service manifest
    * @param initialConfig - Optional initial configuration
+   * @param sourcePath - Optional source path to copy service files from
    * @returns The created service instance
    * @throws ServiceAlreadyExistsError if service already exists
    */
   async register(
     manifest: ServiceManifest,
     initialConfig?: ServiceConfig,
+    sourcePath?: string,
   ): Promise<ServiceInstance> {
     const serviceId = manifest.id;
 
@@ -433,11 +348,21 @@ export class ServiceRegistry {
       throw new ServiceAlreadyExistsError(serviceId);
     }
 
+    // Detect service type
+    const serviceType: ServiceType = isDeclarativeService(manifest) ? "declarative" : "traditional";
+
     const now = new Date().toISOString();
     const agentId = `service:${serviceId}`;
 
     // Create service directory
     await this.ensureServiceDir(serviceId);
+
+    // Copy service files from source if provided
+    if (sourcePath) {
+      await this.copyServiceFiles(sourcePath, serviceId);
+      // Install dependencies after copying (only for traditional services)
+      await this.installDependencies(serviceId, serviceType);
+    }
 
     // Write manifest
     await this.writeJsonFile(this.getManifestPath(serviceId), manifest);
@@ -445,21 +370,6 @@ export class ServiceRegistry {
     // Write config
     const config = initialConfig ?? {};
     await this.writeJsonFile(this.getConfigPath(serviceId), config);
-
-    // Write initial state
-    const state: ServiceStateFile = {
-      serviceId,
-      state: "pending",
-      stateHistory: [],
-      createdAt: now,
-      updatedAt: now,
-      executionStats: {
-        totalRuns: 0,
-        successfulRuns: 0,
-        failedRuns: 0,
-      },
-    };
-    await this.saveState(state);
 
     // Write initial refs
     const refs: ServiceRefsFile = {
@@ -472,19 +382,140 @@ export class ServiceRegistry {
     const service: ServiceInstance = {
       id: serviceId,
       manifest,
-      state: "pending",
-      stateHistory: [],
       config,
       createdAt: now,
       updatedAt: now,
-      executionStats: state.executionStats,
+      executionStats: {
+        totalRuns: 0,
+        successfulRuns: 0,
+        failedRuns: 0,
+      },
       runtimeRefs: refs,
+      serviceType,
     };
 
-    // Update index
-    await this.updateIndexEntry(service);
-
     return service;
+  }
+
+  /**
+   * Copy service files from source directory
+   * @param sourcePath - Source directory path
+   * @param serviceId - Service identifier
+   */
+  private async copyServiceFiles(sourcePath: string, serviceId: string): Promise<void> {
+    const targetPath = this.getServiceDir(serviceId);
+
+    // Files and directories to skip
+    const skipList = new Set([".git", "node_modules", "dist", ".openclaw"]);
+
+    async function copyDir(src: string, dest: string, fsImpl: typeof fs): Promise<void> {
+      await fsImpl.mkdir(dest, { recursive: true });
+
+      const entries = await fsImpl.readdir(src, { withFileTypes: true });
+
+      for (const entry of entries) {
+        if (skipList.has(entry.name)) {
+          continue;
+        }
+
+        const srcPath = path.join(src, entry.name);
+        const destPath = path.join(dest, entry.name);
+
+        if (entry.isDirectory()) {
+          await copyDir(srcPath, destPath, fsImpl);
+        } else {
+          await fsImpl.copyFile(srcPath, destPath);
+        }
+      }
+    }
+
+    await copyDir(sourcePath, targetPath, this.deps.fs);
+  }
+
+  /**
+   * Install npm dependencies for a service
+   * @param serviceId - Service identifier
+   * @param serviceType - Type of service (traditional or declarative)
+   */
+  private async installDependencies(serviceId: string, serviceType: ServiceType): Promise<void> {
+    // Skip npm install for declarative services
+    if (serviceType === "declarative") {
+      return;
+    }
+
+    const serviceDir = this.getServiceDir(serviceId);
+    const packageJsonPath = path.join(serviceDir, "package.json");
+
+    // Check if package.json exists
+    const hasPackageJson = await this.fileExists(packageJsonPath);
+    if (!hasPackageJson) {
+      return;
+    }
+
+    try {
+      await execAsync("npm install --production", {
+        cwd: serviceDir,
+        timeout: 120000,
+      });
+
+      // Create symlink for @openclaw/service-sdk if it uses file: protocol
+      const packageJson = await this.readJsonFile<{ dependencies?: Record<string, string> }>(
+        packageJsonPath,
+      );
+      const sdkPath = packageJson?.dependencies?.["@openclaw/service-sdk"];
+
+      if (sdkPath?.startsWith("file:")) {
+        // Remove the broken symlink/npm installed version
+        const sdkNodePath = path.join(serviceDir, "node_modules", "@openclaw", "service-sdk");
+        await this.deps.fs.rm(sdkNodePath, { recursive: true, force: true }).catch(() => undefined);
+
+        // Ensure @openclaw directory exists
+        const openclawDir = path.join(serviceDir, "node_modules", "@openclaw");
+        await this.deps.fs.mkdir(openclawDir, { recursive: true });
+
+        // Try multiple possible locations for the SDK
+        const possibleSdkPaths = [
+          // From current file (works in dev mode)
+          path.resolve(__dirname, "..", "..", "packages", "service-sdk"),
+          // From process.cwd() (when running from project root)
+          path.join(process.cwd(), "packages", "service-sdk"),
+          // From OPENCLAW_ROOT environment variable
+          process.env.OPENCLAW_ROOT
+            ? path.join(process.env.OPENCLAW_ROOT, "packages", "service-sdk")
+            : null,
+          // Common development paths
+          "/home/zgg/project/serviceclaw/packages/service-sdk",
+          path.join(require("os").homedir(), "project", "serviceclaw", "packages", "service-sdk"),
+        ].filter(Boolean) as string[];
+
+        // Find the first existing SDK path
+        let sdkTarget: string | null = null;
+        for (const tryPath of possibleSdkPaths) {
+          try {
+            await this.deps.fs.access(tryPath);
+            sdkTarget = tryPath;
+            console.log(`[registry] Found service-sdk at: ${tryPath}`);
+            break;
+          } catch {
+            // Path doesn't exist, try next
+          }
+        }
+
+        if (sdkTarget) {
+          // Create symlink
+          await this.deps.fs.symlink(sdkTarget, sdkNodePath, "dir").catch((err) => {
+            console.warn(`[registry] Failed to create symlink: ${err}`);
+          });
+        } else {
+          console.warn(
+            `[registry] Could not find @openclaw/service-sdk. Tried: ${possibleSdkPaths.join(", ")}`,
+          );
+        }
+      }
+    } catch (error) {
+      // Log error but don't fail installation - service might work without npm install
+      console.warn(`[registry] Failed to install dependencies for ${serviceId}:`, error);
+    }
   }
 
   /**
@@ -501,10 +532,6 @@ export class ServiceRegistry {
     // Remove service directory
     const serviceDir = this.getServiceDir(serviceId);
     await this.deps.fs.rm(serviceDir, { recursive: true, force: true });
-
-    // Update index
-    await this.removeIndexEntry(serviceId);
-    this.invalidateCache();
   }
 
   /**
@@ -518,28 +545,27 @@ export class ServiceRegistry {
       return undefined;
     }
 
-    const [config, state, refs] = await Promise.all([
+    const [config, refs] = await Promise.all([
       this.readJsonFile<ServiceConfig>(this.getConfigPath(serviceId)),
-      this.loadState(serviceId),
       this.loadRefs(serviceId),
     ]);
 
-    if (!state) {
-      return undefined;
-    }
+    // Detect service type from manifest
+    const serviceType: ServiceType = isDeclarativeService(manifest) ? "declarative" : "traditional";
 
     return {
       id: serviceId,
       manifest,
       config: config ?? {},
-      state: state.state,
-      stateHistory: state.stateHistory ?? [],
-      createdAt: state.createdAt,
-      updatedAt: state.updatedAt,
-      executionStats: state.executionStats,
-      lastRunAt: state.lastRunAt,
-      nextRunAt: state.nextRunAt,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      executionStats: {
+        totalRuns: 0,
+        successfulRuns: 0,
+        failedRuns: 0,
+      },
       runtimeRefs: refs ?? { agentId: `service:${serviceId}` },
+      serviceType,
     };
   }
 
@@ -550,57 +576,6 @@ export class ServiceRegistry {
    */
   async exists(serviceId: string): Promise<boolean> {
     return this.fileExists(this.getManifestPath(serviceId));
-  }
-
-  // ---------------------------------------------------------------------------
-  // State Transitions
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Update service state
-   * @param serviceId - Service identifier
-   * @param newState - New state to transition to
-   * @param reason - Optional reason for the transition
-   * @throws ServiceNotFoundError if service doesn't exist
-   * @throws InvalidStateTransitionError if transition is invalid
-   */
-  async updateState(serviceId: string, newState: ServiceState, reason?: string): Promise<void> {
-    const state = await this.loadState(serviceId);
-    if (!state) {
-      throw new ServiceNotFoundError(serviceId);
-    }
-
-    const currentState = state.state;
-
-    // Validate state transition
-    if (!this.isValidStateTransition(currentState, newState)) {
-      throw new InvalidStateTransitionError(currentState, newState);
-    }
-
-    // Record transition
-    const transition: StateTransition = {
-      from: currentState,
-      to: newState,
-      timestamp: new Date().toISOString(),
-      reason,
-    };
-
-    state.state = newState;
-    state.stateHistory.push(transition);
-    state.updatedAt = new Date().toISOString();
-
-    await this.saveState(state);
-
-    // Update index if state changed
-    if (currentState !== newState) {
-      const index = await this.loadIndex();
-      const entry = index.services.find((s) => s.id === serviceId);
-      if (entry) {
-        entry.state = newState;
-        entry.updatedAt = state.updatedAt;
-        await this.saveIndex(index);
-      }
-    }
   }
 
   // ---------------------------------------------------------------------------
@@ -624,21 +599,6 @@ export class ServiceRegistry {
 
     const mergedConfig = { ...currentConfig, ...config };
     await this.writeJsonFile(this.getConfigPath(serviceId), mergedConfig);
-
-    // Update timestamp
-    const state = await this.loadState(serviceId);
-    if (state) {
-      state.updatedAt = new Date().toISOString();
-      await this.saveState(state);
-
-      // Update index
-      const index = await this.loadIndex();
-      const entry = index.services.find((s) => s.id === serviceId);
-      if (entry) {
-        entry.updatedAt = state.updatedAt;
-        await this.saveIndex(index);
-      }
-    }
   }
 
   /**
@@ -743,68 +703,6 @@ export class ServiceRegistry {
   // Execution Statistics
   // ---------------------------------------------------------------------------
 
-  /**
-   * Record a successful execution
-   * @param serviceId - Service identifier
-   * @throws ServiceNotFoundError if service doesn't exist
-   */
-  async recordSuccess(serviceId: string): Promise<void> {
-    const state = await this.loadState(serviceId);
-    if (!state) {
-      throw new ServiceNotFoundError(serviceId);
-    }
-
-    state.executionStats.totalRuns++;
-    state.executionStats.successfulRuns++;
-    state.lastRunAt = new Date().toISOString();
-    state.updatedAt = state.lastRunAt;
-
-    await this.saveState(state);
-  }
-
-  /**
-   * Record a failed execution
-   * @param serviceId - Service identifier
-   * @param error - Error that occurred
-   * @throws ServiceNotFoundError if service doesn't exist
-   */
-  async recordFailure(serviceId: string, error: Error): Promise<void> {
-    const state = await this.loadState(serviceId);
-    if (!state) {
-      throw new ServiceNotFoundError(serviceId);
-    }
-
-    state.executionStats.totalRuns++;
-    state.executionStats.failedRuns++;
-    state.lastRunAt = new Date().toISOString();
-    state.updatedAt = state.lastRunAt;
-    state.executionStats.lastError = {
-      message: error.message,
-      timestamp: state.lastRunAt,
-      stack: error.stack,
-    };
-
-    await this.saveState(state);
-  }
-
-  /**
-   * Update next scheduled run time
-   * @param serviceId - Service identifier
-   * @param nextRunAt - ISO timestamp of next run
-   * @throws ServiceNotFoundError if service doesn't exist
-   */
-  async updateNextRun(serviceId: string, nextRunAt: string): Promise<void> {
-    const state = await this.loadState(serviceId);
-    if (!state) {
-      throw new ServiceNotFoundError(serviceId);
-    }
-
-    state.nextRunAt = nextRunAt;
-    state.updatedAt = new Date().toISOString();
-
-    await this.saveState(state);
-  }
-
   // ---------------------------------------------------------------------------
   // Listing and Querying
   // ---------------------------------------------------------------------------
@@ -815,12 +713,18 @@ export class ServiceRegistry {
    * @returns Array of service instances (lightweight - only index data)
    */
   async list(opts: ListServicesOptions = {}): Promise<ServiceIndexEntry[]> {
-    const index = await this.loadIndex();
-    let services = index.services;
+    const scannedServices = await this.scanServiceDirectories();
 
-    if (opts.state) {
-      services = services.filter((s) => s.state === opts.state);
-    }
+    // Convert scanned results to ServiceIndexEntry format
+    let services: ServiceIndexEntry[] = scannedServices
+      .filter((s) => s.manifest !== null) // Only include services with valid manifests
+      .map((s) => ({
+        id: s.serviceId,
+        name: s.manifest!.name,
+        triggerType: s.manifest!.trigger?.type ?? "webhook",
+        category: s.manifest!.category,
+        updatedAt: new Date().toISOString(),
+      }));
 
     if (opts.category) {
       services = services.filter((s) => s.category === opts.category);
@@ -841,24 +745,20 @@ export class ServiceRegistry {
   }
 
   /**
-   * Get services by state
-   * @param state - State to filter by
-   * @returns Array of service index entries
-   */
-  async getByState(state: ServiceState): Promise<ServiceIndexEntry[]> {
-    return this.list({ state });
-  }
-
-  /**
    * Get all services (full instances)
    * @returns Array of full service instances
    */
   async getAll(): Promise<ServiceInstance[]> {
-    const index = await this.loadIndex();
+    const entries = await this.scanServiceDirectories();
     const services: ServiceInstance[] = [];
 
-    for (const entry of index.services) {
-      const service = await this.get(entry.id);
+    for (const entry of entries) {
+      // Skip if manifest is null (invalid service)
+      if (!entry.manifest) {
+        continue;
+      }
+
+      const service = await this.get(entry.serviceId);
       if (service) {
         services.push(service);
       }
@@ -868,102 +768,15 @@ export class ServiceRegistry {
   }
 
   // ---------------------------------------------------------------------------
-  // Lifecycle Helpers
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Enable a service (transition to enabled state)
-   * @param serviceId - Service identifier
-   * @throws ServiceNotFoundError if service doesn't exist
-   */
-  async enable(serviceId: string): Promise<void> {
-    await this.updateState(serviceId, "enabled", "User enabled service");
-  }
-
-  /**
-   * Disable a service (transition to disabled state)
-   * @param serviceId - Service identifier
-   * @throws ServiceNotFoundError if service doesn't exist
-   */
-  async disable(serviceId: string): Promise<void> {
-    await this.updateState(serviceId, "disabled", "User disabled service");
-  }
-
-  /**
-   * Mark service as installing
-   * @param serviceId - Service identifier
-   * @throws ServiceNotFoundError if service doesn't exist
-   */
-  async markInstalling(serviceId: string): Promise<void> {
-    await this.updateState(serviceId, "installing", "Installation started");
-  }
-
-  /**
-   * Mark service as installed
-   * @param serviceId - Service identifier
-   * @throws ServiceNotFoundError if service doesn't exist
-   */
-  async markInstalled(serviceId: string): Promise<void> {
-    await this.updateState(serviceId, "installed", "Installation completed");
-  }
-
-  /**
-   * Mark service as having an error
-   * @param serviceId - Service identifier
-   * @param errorMessage - Error message
-   * @throws ServiceNotFoundError if service doesn't exist
-   */
-  async markError(serviceId: string, errorMessage: string): Promise<void> {
-    await this.updateState(serviceId, "error", errorMessage);
-  }
-
-  // ---------------------------------------------------------------------------
   // State Persistence and Recovery
   // ---------------------------------------------------------------------------
 
   /**
    * Recover registry state from disk
-   * Rebuilds index from service directories if needed
+   * @deprecated This method is kept for backward compatibility. Index file is no longer used.
    */
   async recover(): Promise<void> {
-    this.invalidateCache();
-
-    try {
-      await this.ensureServicesDir();
-      const entries = await this.deps.fs.readdir(this.deps.servicesDir, {
-        withFileTypes: true,
-      });
-
-      const index: ServiceRegistryIndex = { version: 1, services: [] };
-
-      for (const entry of entries) {
-        if (!entry.isDirectory()) {
-          continue;
-        }
-
-        const serviceId = entry.name;
-        const manifest = await this.readJsonFile<ServiceManifest>(this.getManifestPath(serviceId));
-        const state = await this.loadState(serviceId);
-
-        if (manifest && state) {
-          index.services.push({
-            id: serviceId,
-            name: manifest.name,
-            state: state.state,
-            triggerType: manifest.trigger.type,
-            category: manifest.category,
-            updatedAt: state.updatedAt,
-          });
-        }
-      }
-
-      await this.saveIndex(index);
-    } catch (err) {
-      const code = (err as { code?: string }).code;
-      if (code !== "ENOENT") {
-        throw err;
-      }
-    }
+    // No-op: Index file is no longer used
   }
 
   /**
@@ -972,27 +785,28 @@ export class ServiceRegistry {
    */
   async getStats(): Promise<{
     totalServices: number;
-    byState: Record<ServiceState, number>;
     byCategory: Record<string, number>;
     byTriggerType: Record<string, number>;
   }> {
-    const index = await this.loadIndex();
+    const entries = await this.scanServiceDirectories();
 
-    const byState: Record<string, number> = {};
     const byCategory: Record<string, number> = {};
     const byTriggerType: Record<string, number> = {};
 
-    for (const service of index.services) {
-      byState[service.state] = (byState[service.state] ?? 0) + 1;
-      const categoryKey = (service.category ?? "custom") as string;
-      byCategory[categoryKey] = (byCategory[categoryKey] ?? 0) + 1;
-      byTriggerType[service.triggerType as string] =
-        (byTriggerType[service.triggerType as string] ?? 0) + 1;
+    for (const entry of entries) {
+      if (!entry.manifest) {
+        continue;
+      }
+
+      const category = entry.manifest.category ?? "custom";
+      const triggerType = entry.manifest.trigger?.type ?? "webhook";
+
+      byCategory[category] = (byCategory[category] ?? 0) + 1;
+      byTriggerType[triggerType] = (byTriggerType[triggerType] ?? 0) + 1;
     }
 
     return {
-      totalServices: index.services.length,
-      byState: byState as Record<ServiceState, number>,
+      totalServices: entries.filter((e) => e.manifest !== null).length,
       byCategory,
       byTriggerType,
     };
@@ -1007,8 +821,6 @@ export class ServiceRegistry {
     } catch {
       // best-effort
     }
-    this.indexCache = null;
-    this.indexCacheValid = false;
   }
 }
 

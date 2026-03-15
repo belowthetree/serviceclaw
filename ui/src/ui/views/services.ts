@@ -7,63 +7,7 @@
 
 import { html, nothing, type TemplateResult } from "lit";
 import { icons } from "../icons.ts";
-import type { ServiceWithStats, ServiceState } from "../types.ts";
-
-function getStateInfo(state: ServiceState): { label: string; color: string; bgColor: string } {
-  switch (state) {
-    case "enabled":
-      return {
-        label: "Enabled",
-        color: "var(--accent-success, #22c55e)",
-        bgColor: "rgba(34, 197, 94, 0.1)",
-      };
-    case "disabled":
-      return {
-        label: "Disabled",
-        color: "var(--text-muted, #71717a)",
-        bgColor: "rgba(113, 113, 122, 0.1)",
-      };
-    case "error":
-    case "validation_error":
-    case "install_error":
-      return {
-        label: "Error",
-        color: "var(--accent-error, #ef4444)",
-        bgColor: "rgba(239, 68, 68, 0.1)",
-      };
-    case "installing":
-      return {
-        label: "Installing...",
-        color: "var(--accent-primary, #10b981)",
-        bgColor: "rgba(16, 185, 129, 0.1)",
-      };
-    case "uninstalling":
-      return {
-        label: "Uninstalling...",
-        color: "var(--accent-primary, #10b981)",
-        bgColor: "rgba(16, 185, 129, 0.1)",
-      };
-    case "pending":
-      return {
-        label: "Pending",
-        color: "var(--text-muted, #71717a)",
-        bgColor: "rgba(113, 113, 122, 0.1)",
-      };
-    case "validating":
-      return {
-        label: "Validating...",
-        color: "var(--accent-primary, #10b981)",
-        bgColor: "rgba(16, 185, 129, 0.1)",
-      };
-    case "installed":
-    default:
-      return {
-        label: "Installed",
-        color: "var(--accent-primary, #10b981)",
-        bgColor: "rgba(16, 185, 129, 0.1)",
-      };
-  }
-}
+import type { ServiceWithStats } from "../types.ts";
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
@@ -97,7 +41,6 @@ export function renderServicesView(props: ServicesViewProps): TemplateResult {
   };
 
   const renderServiceCard = (service: ServiceWithStats): TemplateResult => {
-    const stateInfo = getStateInfo(service.state);
     const hasStats = service.stats && service.stats.totalRuns > 0;
 
     return html`
@@ -107,12 +50,6 @@ export function renderServicesView(props: ServicesViewProps): TemplateResult {
             <h3 class="service-card__name">${service.name}</h3>
             <span class="service-card__id">${service.id}</span>
           </div>
-          <span
-            class="service-card__state"
-            style="color: ${stateInfo.color}; background: ${stateInfo.bgColor}; border-color: ${stateInfo.color}"
-          >
-            ${stateInfo.label}
-          </span>
         </div>
         
         <div class="service-card__meta">
@@ -160,30 +97,7 @@ export function renderServicesView(props: ServicesViewProps): TemplateResult {
 
         <div class="service-card__actions">
           ${
-            service.state === "disabled"
-              ? html`
-              <button
-                class="btn btn-primary"
-                @click=${() => props.onServiceEnable?.(service.id)}
-                ?disabled=${props.loading}
-              >
-                Enable
-              </button>
-            `
-              : service.state === "enabled"
-                ? html`
-                <button
-                  class="btn btn-secondary"
-                  @click=${() => props.onServiceDisable?.(service.id)}
-                  ?disabled=${props.loading}
-                >
-                  Disable
-                </button>
-              `
-                : nothing
-          }
-          ${
-            service.state === "enabled" && props.onServiceRun
+            props.onServiceRun
               ? html`
               <button
                 class="btn btn-primary"

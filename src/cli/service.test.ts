@@ -337,6 +337,9 @@ describe("service CLI integration", () => {
     it("should enable and disable a service", async () => {
       await registry.register(lifecycleManifest);
 
+      await registry.updateState("integration-test", "validating");
+      await registry.updateState("integration-test", "installing");
+      await registry.updateState("integration-test", "installed");
       await registry.enable("integration-test");
       let service = await registry.get("integration-test");
       expect(service?.state).toBe("enabled");
@@ -348,6 +351,9 @@ describe("service CLI integration", () => {
 
     it("should track state history", async () => {
       await registry.register(lifecycleManifest);
+      await registry.updateState("integration-test", "validating");
+      await registry.updateState("integration-test", "installing");
+      await registry.updateState("integration-test", "installed");
       await registry.enable("integration-test");
       await registry.disable("integration-test");
 
@@ -392,11 +398,12 @@ describe("service CLI integration", () => {
       await registry.register({
         ...sampleManifest,
         id: "stats-test",
+        category: "productivity",
       });
 
       const stats = await registry.getStats();
       expect(stats.totalServices).toBe(1);
-      expect(stats.byState.pending).toBe(1);
+      expect(stats.byCategory.productivity).toBe(1);
     });
   });
 });

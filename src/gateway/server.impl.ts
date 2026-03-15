@@ -811,6 +811,25 @@ export async function startGatewayServer(
 
   const canvasHostServerPort = (canvasHostServer as CanvasHostServer | null)?.port;
 
+  // Initialize sidecars before creating context so serviceLifecycleManager is available
+  let browserControl: Awaited<ReturnType<typeof startBrowserControlServerIfEnabled>> = null;
+  let serviceLifecycleManager: Awaited<
+    ReturnType<typeof startGatewaySidecars>
+  >["serviceLifecycleManager"] = null;
+  if (!minimalTestGateway) {
+    ({ browserControl, pluginServices, serviceLifecycleManager } = await startGatewaySidecars({
+      cfg: cfgAtStart,
+      pluginRegistry,
+      defaultWorkspaceDir,
+      deps,
+      startChannels,
+      log,
+      logHooks,
+      logChannels,
+      logBrowser,
+    }));
+  }
+
   const gatewayRequestContext: import("./server-methods/types.js").GatewayRequestContext = {
     deps,
     cron,
@@ -861,6 +880,7 @@ export async function startGatewayServer(
     markChannelLoggedOut,
     wizardRunner,
     broadcastVoiceWakeChanged,
+    serviceLifecycleManager,
   };
 
   // Store the gateway context as a fallback for plugin subagent dispatch
@@ -920,21 +940,6 @@ export async function startGatewayServer(
         controlUiBasePath,
         logTailscale,
       });
-
-  let browserControl: Awaited<ReturnType<typeof startBrowserControlServerIfEnabled>> = null;
-  if (!minimalTestGateway) {
-    ({ browserControl, pluginServices } = await startGatewaySidecars({
-      cfg: cfgAtStart,
-      pluginRegistry,
-      defaultWorkspaceDir,
-      deps,
-      startChannels,
-      log,
-      logHooks,
-      logChannels,
-      logBrowser,
-    }));
-  }
 
   // Run gateway_start plugin hook (fire-and-forget)
   if (!minimalTestGateway) {

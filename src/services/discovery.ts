@@ -98,6 +98,7 @@ export async function scanServices(
           name: entry.name,
           manifest: validation.manifest,
           valid: true,
+          serviceType: validation.serviceType,
         });
       } else {
         services.push({
@@ -105,6 +106,7 @@ export async function scanServices(
           name: entry.name,
           valid: false,
           errors: validation.errors,
+          serviceType: validation.serviceType,
         });
         logger.warn(`Invalid service "${entry.name}": ${validation.errors?.join(", ")}`);
       }
@@ -170,13 +172,19 @@ export async function loadService(
     throw new Error("Manifest is missing required fields (id, name, version)");
   }
 
+  if (!manifest.entry) {
+    throw new Error("Manifest is missing required field: entry");
+  }
+
   const entryPath = path.join(resolvedPath, manifest.entry);
   let serviceModule: unknown;
   try {
     serviceModule = await import(entryPath);
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    throw new Error(`Failed to load entry module "${manifest.entry}": ${errorMessage}`, { cause: err });
+    throw new Error(`Failed to load entry module "${manifest.entry}": ${errorMessage}`, {
+      cause: err,
+    });
   }
 
   return {

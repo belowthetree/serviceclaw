@@ -46,10 +46,7 @@ function isSafePath(servicePath: string, targetPath: string): boolean {
   return resolved.startsWith(servicePath);
 }
 
-export function handleServicesHttpRequest(
-  req: IncomingMessage,
-  res: ServerResponse,
-): boolean {
+export function handleServicesHttpRequest(req: IncomingMessage, res: ServerResponse): boolean {
   const url = new URL(req.url ?? "/", "http://localhost");
   const pathname = url.pathname;
 

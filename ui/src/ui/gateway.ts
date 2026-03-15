@@ -478,6 +478,36 @@ export class GatewayBrowserClient {
     }
   }
 
+  async startService(
+    serviceId: string,
+  ): Promise<{ serviceId: string; state: string; pid?: number }> {
+    const result = await this.request<{
+      success: boolean;
+      serviceId: string;
+      state: string;
+      pid?: number;
+      error?: { message: string };
+    }>("services.start", {
+      serviceId,
+    });
+    if (!result.success) {
+      throw new Error(result.error?.message || `Failed to start service: ${serviceId}`);
+    }
+    return { serviceId: result.serviceId, state: result.state, pid: result.pid };
+  }
+
+  async stopService(serviceId: string): Promise<void> {
+    const result = await this.request<{ success: boolean; error?: { message: string } }>(
+      "services.stop",
+      {
+        serviceId,
+      },
+    );
+    if (!result.success) {
+      throw new Error(result.error?.message || `Failed to stop service: ${serviceId}`);
+    }
+  }
+
   private queueConnect() {
     this.connectNonce = null;
     this.connectSent = false;

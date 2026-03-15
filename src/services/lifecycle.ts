@@ -10,6 +10,8 @@
  * @see src/services/schema.ts
  */
 
+import fs from "fs";
+import path from "path";
 import type { ToolPolicyLike } from "../agents/tool-policy.js";
 import type { CronService } from "../cron/service.js";
 import {
@@ -1257,7 +1259,7 @@ import type {
   ManagedRun,
   TerminationReason,
 } from "../process/supervisor/types.js";
-import { scanServices, getValidServices } from "./discovery.js";
+import { getValidServices } from "./discovery.js";
 
 /** Service process lifecycle states */
 export type ServiceProcessState =
@@ -1286,6 +1288,8 @@ export interface ServiceProcessInstance {
   error?: string;
   /** Managed run from ProcessSupervisor */
   managedRun?: ManagedRun;
+  /** Logs directory path for this service instance */
+  logsDir?: string;
 }
 
 /** Lifecycle hook callbacks */
@@ -1389,6 +1393,55 @@ export class ServiceLifecycleManager {
   }
 
   // ===========================================================================
+  // Log Management
+  // ===========================================================================
+
+  /**
+   * Rotate log file if it exceeds max size (10MB)
+   * Keeps up to 5 backup files (.1 to .5)
+   */
+  private rotateLogIfNeeded(logFile: string): void {
+    if (!fs.existsSync(logFile)) {
+      return;
+    }
+
+    try {
+      const TEN_MB = 10 * 1024 * 1024;
+      const stats = fs.statSync(logFile);
+
+      if (stats.size > TEN_MB) {
+        // Rotate files: move .4 to .5, .3 to .4, etc.
+        for (let i = 5; i >= 1; i--) {
+          const oldFile = i === 1 ? logFile : `${logFile}.${i - 1}`;
+          const newFile = `${logFile}.${i}`;
+
+          if (fs.existsSync(oldFile)) {
+            if (i === 5) {
+              fs.unlinkSync(oldFile);
+            } else {
+              fs.renameSync(oldFile, newFile);
+            }
+          }
+        }
+      }
+    } catch {
+      // Silently ignore rotation errors
+    }
+  }
+
+  /**
+   * Write log data to file with rotation
+   */
+  private writeLog(logFile: string, data: string): void {
+    try {
+      this.rotateLogIfNeeded(logFile);
+      fs.appendFileSync(logFile, data, "utf8");
+    } catch {
+      // Silently ignore write errors to avoid breaking service execution
+    }
+  }
+
+  // ===========================================================================
   // Core Lifecycle Operations
   // ===========================================================================
 
@@ -1401,12 +1454,15 @@ export class ServiceLifecycleManager {
    * @throws ServiceLifecycleError if service is already running
    */
   async startService(serviceId: string): Promise<ServiceProcessInstance> {
+    logger.info(`Starting service: ${serviceId}`);
+
     const existingInstance = this.instances.get(serviceId);
 
     if (
       existingInstance &&
       (existingInstance.state === "starting" || existingInstance.state === "started")
     ) {
+      logger.warn(`Service ${serviceId} is already ${existingInstance.state}`);
       throw new ServiceLifecycleError(
         `Service ${serviceId} is already ${existingInstance.state}`,
         serviceId,
@@ -1414,13 +1470,16 @@ export class ServiceLifecycleManager {
     }
 
     // Discover service
+    logger.debug(`Discovering service: ${serviceId}`);
     const getServicesFn = this.deps.getServices ?? getValidServices;
     const services = await getServicesFn(this.deps.servicesDir);
     const service = services.find((s) => s.manifest.id === serviceId);
 
     if (!service) {
+      logger.error(`Service not found: ${serviceId}`);
       throw new ServiceNotFoundError(serviceId);
     }
+    logger.debug(`Found service at path: ${service.path}`);
 
     // Create starting instance
     const instance: ServiceProcessInstance = {
@@ -1433,11 +1492,30 @@ export class ServiceLifecycleManager {
     this.emitStateChange(serviceId, "inactive", "starting", instance);
 
     try {
+      // Set up logs directory
+      const logsDir = path.join(
+        process.env.HOME || process.env.USERPROFILE || "/tmp",
+        ".openclaw",
+        "services",
+        serviceId,
+        "logs",
+      );
+      fs.mkdirSync(logsDir, { recursive: true });
+      instance.logsDir = logsDir;
+      logger.debug(`Created logs directory: ${logsDir}`);
+
       // Spawn the service process
       const entryPath = `${service.path}/${service.manifest.entry}`;
+      const isTypeScript = entryPath.endsWith(".ts");
+      const command = isTypeScript ? "tsx" : "node";
+      logger.info(`Spawning service process: ${command} ${entryPath}`);
+
+      // Create a logger for this service
+      const serviceLogger = createSubsystemLogger(`service:${serviceId}`);
+
       const managedRun = await this.deps.supervisor.spawn({
         mode: "child",
-        argv: ["node", entryPath],
+        argv: [command, entryPath],
         cwd: service.path,
         sessionId: this.deps.sessionId,
         backendId: this.deps.backendId,
@@ -1445,9 +1523,23 @@ export class ServiceLifecycleManager {
         replaceExistingScope: true,
         onStdout: (chunk) => {
           this.emitStdout(serviceId, chunk);
+          // Log to OpenClaw's logging system
+          serviceLogger.info(chunk.trimEnd());
+          // Also persist to log file for CLI access
+          if (instance.logsDir) {
+            const stdoutLog = path.join(instance.logsDir, "stdout.log");
+            this.writeLog(stdoutLog, chunk);
+          }
         },
         onStderr: (chunk) => {
           this.emitStderr(serviceId, chunk);
+          // Log to OpenClaw's logging system
+          serviceLogger.error(chunk.trimEnd());
+          // Also persist to log file for CLI access
+          if (instance.logsDir) {
+            const stderrLog = path.join(instance.logsDir, "stderr.log");
+            this.writeLog(stderrLog, chunk);
+          }
         },
       });
 
@@ -1455,6 +1547,8 @@ export class ServiceLifecycleManager {
       instance.managedRun = managedRun;
       instance.pid = managedRun.pid;
       instance.state = "started";
+
+      logger.info(`Service ${serviceId} started successfully (PID: ${managedRun.pid})`);
 
       this.emitStateChange(serviceId, "starting", "started", instance);
       this.emitStart(serviceId, instance);
@@ -1467,6 +1561,8 @@ export class ServiceLifecycleManager {
       instance.state = "error";
       instance.error = error instanceof Error ? error.message : String(error);
       instance.stoppedAt = new Date();
+
+      logger.error(`Failed to start service ${serviceId}: ${instance.error}`);
 
       this.emitStateChange(serviceId, "starting", "error", instance);
 
@@ -1486,13 +1582,17 @@ export class ServiceLifecycleManager {
    * @throws ServiceNotFoundError if service doesn't exist or isn't running
    */
   async stopService(serviceId: string, reason: TerminationReason = "manual-cancel"): Promise<void> {
+    logger.info(`Stopping service: ${serviceId} (reason: ${reason})`);
+
     const instance = this.instances.get(serviceId);
 
     if (!instance) {
+      logger.error(`Service not found: ${serviceId}`);
       throw new ServiceNotFoundError(serviceId);
     }
 
     if (instance.state !== "started" && instance.state !== "starting") {
+      logger.warn(`Cannot stop service ${serviceId} from state ${instance.state}`);
       throw new ServiceLifecycleError(
         `Cannot stop service ${serviceId} from state ${instance.state}`,
         serviceId,
@@ -1505,6 +1605,7 @@ export class ServiceLifecycleManager {
 
     try {
       if (instance.managedRun) {
+        logger.debug(`Cancelling service process: ${serviceId}`);
         instance.managedRun.cancel(reason);
         // Wait for process to exit
         await instance.managedRun.wait();
@@ -1513,12 +1614,16 @@ export class ServiceLifecycleManager {
       instance.state = "stopped";
       instance.stoppedAt = new Date();
 
+      logger.info(`Service ${serviceId} stopped successfully`);
+
       this.emitStateChange(serviceId, "stopping", "stopped", instance);
       this.emitStop(serviceId, instance);
     } catch (error) {
       instance.state = "error";
       instance.error = error instanceof Error ? error.message : String(error);
       instance.stoppedAt = new Date();
+
+      logger.error(`Failed to stop service ${serviceId}: ${instance.error}`);
 
       this.emitStateChange(serviceId, "stopping", "error", instance);
 
@@ -1671,12 +1776,15 @@ export class ServiceLifecycleManager {
     instance: ServiceProcessInstance,
     managedRun: ManagedRun,
   ): void {
+    logger.debug(`Setting up exit handler for service: ${serviceId}`);
+
     // Handle async exit - don't await, let it run in background
     managedRun.wait().then(
       (exit) => {
         // Only process if instance is still tracked and in started/starting state
         const currentInstance = this.instances.get(serviceId);
         if (!currentInstance || currentInstance.managedRun?.runId !== managedRun.runId) {
+          logger.debug(`Instance ${serviceId} was replaced or removed, skipping exit handling`);
           return; // Instance was replaced or removed
         }
 
@@ -1684,11 +1792,28 @@ export class ServiceLifecycleManager {
 
         if (exit.exitCode === 0) {
           currentInstance.state = "stopped";
+          logger.info(`Service ${serviceId} exited normally (code: 0)`);
         } else {
           currentInstance.state = "error";
           currentInstance.error = `Process exited with code ${exit.exitCode}`;
           if (exit.stderr) {
             currentInstance.error += `: ${exit.stderr.slice(0, 200)}`;
+          }
+
+          logger.error(
+            `Service ${serviceId} exited with error (code: ${exit.exitCode}): ${currentInstance.error}`,
+          );
+
+          // Write full error details to error.log
+          if (currentInstance.logsDir) {
+            const errorLogPath = path.join(currentInstance.logsDir, "error.log");
+            const errorContent = `Timestamp: ${new Date().toISOString()}\nExit Code: ${exit.exitCode}\n\nStderr:\n${exit.stderr || "N/A"}\n`;
+            try {
+              fs.writeFileSync(errorLogPath, errorContent);
+              logger.debug(`Error log written to: ${errorLogPath}`);
+            } catch (err) {
+              logger.error(`Failed to write error log: ${String(err)}`);
+            }
           }
         }
 
@@ -1700,6 +1825,7 @@ export class ServiceLifecycleManager {
 
         // Notify about unexpected exit (not from manual stop)
         if (oldState === "started" && exit.exitCode !== 0) {
+          logger.warn(`Service ${serviceId} exited unexpectedly`);
           this.emitUnexpectedExit(serviceId, currentInstance, exit.exitCode);
         }
 
@@ -1708,6 +1834,7 @@ export class ServiceLifecycleManager {
           setTimeout(() => {
             const instance = this.instances.get(serviceId);
             if (instance?.managedRun?.runId === managedRun.runId) {
+              logger.debug(`Cleaning up instance for service: ${serviceId}`);
               this.instances.delete(serviceId);
             }
           }, 60000); // Keep for 1 minute for inspection
@@ -1724,6 +1851,8 @@ export class ServiceLifecycleManager {
         currentInstance.state = "error";
         currentInstance.error = error instanceof Error ? error.message : String(error);
         currentInstance.stoppedAt = new Date();
+
+        logger.error(`Service ${serviceId} process error: ${currentInstance.error}`);
 
         this.emitStateChange(serviceId, oldState, "error", currentInstance);
         this.emitStop(serviceId, currentInstance);

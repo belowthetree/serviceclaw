@@ -45,10 +45,12 @@ export class ServiceCronTrigger {
       triggerType: "cron",
     };
 
+    const sessionTarget = this.manifest.execution?.sessionTarget;
     const cronJob: CronJobCreate = {
       name: this.manifest.name,
       agentId,
-      sessionTarget: this.manifest.execution?.sessionTarget ?? "isolated",
+      sessionTarget:
+        sessionTarget === "main" || sessionTarget === "isolated" ? sessionTarget : "isolated",
       enabled: true,
       wakeMode: "next-heartbeat",
       schedule: {

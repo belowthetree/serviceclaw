@@ -249,7 +249,7 @@ export class ServiceClient extends EventEmitter {
         const message = JSON.parse(data.toString()) as SCPMessage;
         this.handleMessage(message);
       } catch (error) {
-        this.emit("error", new Error(`Failed to parse message: ${error}`));
+        this.emit("error", new Error(`Failed to parse message: ${String(error)}`));
       }
     });
 
@@ -273,7 +273,8 @@ export class ServiceClient extends EventEmitter {
   }
 
   private handleMessage(message: SCPMessage): void {
-    if (message.serviceId !== this.serviceId) {
+    // Skip serviceId check if not present (broadcast messages from Agent)
+    if (message.serviceId && message.serviceId !== this.serviceId) {
       this.emit(
         "error",
         new Error(`Service ID mismatch: ${message.serviceId} !== ${this.serviceId}`),
@@ -290,8 +291,18 @@ export class ServiceClient extends EventEmitter {
         this.handleStopRequest(message);
         break;
 
+      case "service.event": {
+        // Forward generic events to listeners
+        const eventMessage = message as { payload?: { event?: string; data?: unknown } };
+        if (eventMessage.payload?.event) {
+          this.emit(eventMessage.payload.event, eventMessage.payload.data);
+        }
+        break;
+      }
+
       default:
-        this.emit("error", new Error(`Unknown message type: ${message.type}`));
+        // Forward unknown message types as generic events
+        this.emit(message.type, message);
     }
   }
 

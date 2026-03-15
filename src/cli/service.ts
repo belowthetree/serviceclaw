@@ -17,12 +17,12 @@ import type { Command } from "commander";
 import execa from "execa";
 import JSON5 from "json5";
 import { defaultRuntime } from "../runtime.js";
-import { getServiceRegistry, type ServiceState } from "../services/registry.js";
-import type { ServiceManifest, ServiceConfig } from "../services/schema.js";
-import { isServiceManifest } from "../services/schema.js";
+import { getServiceRegistry } from "../services/registry.js";
+import type { ServiceManifest, ServiceConfig, ServiceType } from "../services/schema.js";
+import { isServiceManifest, isDeclarativeService } from "../services/schema.js";
 import { renderTable } from "../terminal/table.js";
 import { theme } from "../terminal/theme.js";
-import { resolveUserPath } from "../utils.js";
+import { CONFIG_DIR, resolveUserPath } from "../utils.js";
 import { withProgress } from "./progress.js";
 
 // =============================================================================
@@ -38,6 +38,7 @@ export type ServiceListOptions = {
 export type ServiceInstallOptions = {
   config?: string;
   enable?: boolean;
+  start?: boolean;
 };
 
 export type ServiceRemoveOptions = {
@@ -52,31 +53,6 @@ export type ServiceLogsOptions = {
 // =============================================================================
 // Helper Functions
 // =============================================================================
-
-/**
- * Format a service state with appropriate color
- */
-function formatState(state: ServiceState): string {
-  switch (state) {
-    case "enabled":
-      return theme.success(state);
-    case "disabled":
-      return theme.warn(state);
-    case "error":
-    case "validation_error":
-    case "install_error":
-      return theme.error(state);
-    case "pending":
-    case "validating":
-    case "installing":
-    case "installed":
-      return theme.accent(state);
-    case "uninstalling":
-      return theme.muted(state);
-    default:
-      return state;
-  }
-}
 
 /**
  * Format a date string for display
@@ -122,7 +98,7 @@ function isGitUrl(str: string): boolean {
 async function cloneGitRepoAndLoadManifest(
   gitUrl: string,
   progressLabel: string,
-): Promise<{ manifest: ServiceManifest; tempDir: string } | null> {
+): Promise<{ manifest: ServiceManifest; tempDir: string; serviceType: ServiceType } | null> {
   const tempDir = await fs.mkdtemp("serviceclaw-service-");
 
   try {
@@ -135,32 +111,24 @@ async function cloneGitRepoAndLoadManifest(
       },
     );
 
-    // Look for service.json in the cloned repo
-    const manifestPath = path.join(tempDir, "service.json");
-    const manifest = await loadManifestFromPath(manifestPath);
+    // Try root directory first
+    const result = await detectServiceManifest(tempDir);
+    if (result) {
+      return { manifest: result.manifest, tempDir, serviceType: result.serviceType };
+    }
 
-    if (!manifest) {
-      // Try alternative locations
-      const altPaths = [
-        path.join(tempDir, "manifest.json"),
-        path.join(tempDir, "service", "service.json"),
-        path.join(tempDir, "src", "service.json"),
-      ];
+    // Try alternative subdirectories
+    const altDirs = [path.join(tempDir, "service"), path.join(tempDir, "src")];
 
-      for (const altPath of altPaths) {
-        const altManifest = await loadManifestFromPath(altPath);
-        if (altManifest) {
-          return { manifest: altManifest, tempDir };
-        }
+    for (const altDir of altDirs) {
+      const altResult = await detectServiceManifest(altDir);
+      if (altResult) {
+        return { manifest: altResult.manifest, tempDir, serviceType: altResult.serviceType };
       }
     }
 
-    if (!manifest) {
-      await fs.rm(tempDir, { recursive: true, force: true });
-      return null;
-    }
-
-    return { manifest, tempDir };
+    await fs.rm(tempDir, { recursive: true, force: true });
+    return null;
   } catch (error) {
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
     throw error;
@@ -202,14 +170,87 @@ function parseConfigOption(configStr: string | undefined): ServiceConfig {
 }
 
 /**
- * Get service logs (placeholder - would integrate with actual logging system)
+ * Detect service manifest and type from a local directory
+ * Tries service.json first, then manifest.json
  */
-async function getServiceLogs(_serviceId: string, _options: ServiceLogsOptions): Promise<string[]> {
-  // This is a placeholder implementation
-  // In a real implementation, this would read from:
-  // - ~/.openclaw/services/{serviceId}/logs/
-  // - Or query the gateway's logging system
-  return ["Logs feature requires gateway integration"];
+async function detectServiceManifest(
+  dirPath: string,
+): Promise<{ manifest: ServiceManifest; manifestPath: string; serviceType: ServiceType } | null> {
+  // Try service.json first, then manifest.json
+  const manifestFiles = ["service.json", "manifest.json"];
+
+  for (const file of manifestFiles) {
+    const manifestPath = path.join(dirPath, file);
+    const manifest = await loadManifestFromPath(manifestPath);
+
+    if (manifest) {
+      const serviceType: ServiceType = isDeclarativeService(manifest)
+        ? "declarative"
+        : "traditional";
+      return { manifest, manifestPath, serviceType };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Get the service logs directory path for a service
+ */
+function getServiceLogsDir(serviceId: string): string {
+  return path.join(CONFIG_DIR, "services", serviceId, "logs");
+}
+
+/**
+ * Read the last N lines from a file efficiently
+ * Returns array of lines (empty if file doesn't exist or error)
+ */
+async function readLastLines(filePath: string, lines: number): Promise<string[]> {
+  try {
+    const content = await fs.readFile(filePath, "utf-8");
+    const allLines = content.split("\n").filter((line) => line.trim());
+    return allLines.slice(-lines);
+  } catch {
+    // File doesn't exist or can't be read - return empty array
+    return [];
+  }
+}
+
+/**
+ * Get service logs from stdout.log and stderr.log
+ * Combines and returns the last N lines from both files
+ */
+async function getServiceLogs(serviceId: string, options: ServiceLogsOptions): Promise<string[]> {
+  const lines = options.lines ?? 100;
+  const logsDir = getServiceLogsDir(serviceId);
+
+  // Read from both stdout and stderr log files
+  const stdoutPath = path.join(logsDir, "stdout.log");
+  const stderrPath = path.join(logsDir, "stderr.log");
+
+  const [stdoutLines, stderrLines] = await Promise.all([
+    readLastLines(stdoutPath, lines),
+    readLastLines(stderrPath, lines),
+  ]);
+
+  // Combine logs with source prefix for clarity
+  const combinedLogs: string[] = [];
+
+  for (const line of stdoutLines) {
+    combinedLogs.push(`[stdout] ${line}`);
+  }
+
+  for (const line of stderrLines) {
+    combinedLogs.push(`[stderr] ${line}`);
+  }
+
+  // If no logs found at all, return informative message
+  if (combinedLogs.length === 0) {
+    return ["No log files found for this service."];
+  }
+
+  // Return combined logs (limited to requested lines total)
+  return combinedLogs.slice(-lines);
 }
 
 // =============================================================================
@@ -240,7 +281,6 @@ async function listServices(options: ServiceListOptions): Promise<void> {
   const rows = services.map((service) => ({
     ID: service.id,
     Name: service.name,
-    State: formatState(service.state),
     Trigger: String(service.triggerType ?? ""),
     Updated: formatDate(service.updatedAt),
   }));
@@ -251,7 +291,6 @@ async function listServices(options: ServiceListOptions): Promise<void> {
       columns: [
         { key: "ID", header: "ID", minWidth: 16, flex: true },
         { key: "Name", header: "Name", minWidth: 20, flex: true },
-        { key: "State", header: "State", minWidth: 12 },
         { key: "Trigger", header: "Trigger", minWidth: 12 },
         { key: "Updated", header: "Updated", minWidth: 20 },
       ],
@@ -263,9 +302,12 @@ async function listServices(options: ServiceListOptions): Promise<void> {
     defaultRuntime.log("");
     const stats = await registry.getStats();
     defaultRuntime.log(theme.muted(`Statistics: ${stats.totalServices} services total`));
-    for (const [state, count] of Object.entries(stats.byState)) {
-      defaultRuntime.log(`  ${formatState(state as ServiceState)}: ${count}`);
-    }
+    defaultRuntime.log(
+      theme.muted(`  Categories: ${Object.keys(stats.byCategory).join(", ") || "none"}`),
+    );
+    defaultRuntime.log(
+      theme.muted(`  Trigger types: ${Object.keys(stats.byTriggerType).join(", ") || "none"}`),
+    );
   }
 }
 
@@ -278,16 +320,20 @@ async function installService(source: string, options: ServiceInstallOptions): P
 
   let manifest: ServiceManifest | null = null;
   let tempDir: string | null = null;
+  let sourcePath: string | undefined;
+  let serviceType: ServiceType = "traditional";
 
   // Determine if it's a git URL or local path
   if (isGitUrl(source)) {
     const result = await cloneGitRepoAndLoadManifest(source, "Installing service");
     if (!result) {
-      defaultRuntime.error(`Could not find service.json in cloned repository: ${source}`);
+      defaultRuntime.error(`Could not find service manifest in cloned repository: ${source}`);
       process.exit(1);
     }
     manifest = result.manifest;
     tempDir = result.tempDir;
+    sourcePath = tempDir;
+    serviceType = result.serviceType;
   } else {
     // Local path
     const resolvedPath = resolveUserPath(source);
@@ -299,19 +345,31 @@ async function installService(source: string, options: ServiceInstallOptions): P
       process.exit(1);
     }
 
-    let manifestPath: string;
     if (stats.isDirectory()) {
-      manifestPath = path.join(resolvedPath, "service.json");
+      // Try to detect manifest in directory
+      const result = await detectServiceManifest(resolvedPath);
+      if (!result) {
+        defaultRuntime.error(`Could not find service manifest in directory: ${resolvedPath}`);
+        defaultRuntime.error(
+          "Make sure the directory contains a valid service.json or manifest.json file.",
+        );
+        process.exit(1);
+      }
+      manifest = result.manifest;
+      sourcePath = resolvedPath;
+      serviceType = result.serviceType;
     } else {
-      manifestPath = resolvedPath;
-    }
-
-    manifest = await loadManifestFromPath(manifestPath);
-
-    if (!manifest) {
-      defaultRuntime.error(`Invalid service manifest at: ${manifestPath}`);
-      defaultRuntime.error("Make sure the file exists and contains a valid service.json schema.");
-      process.exit(1);
+      // It's a file - load it directly
+      manifest = await loadManifestFromPath(resolvedPath);
+      if (!manifest) {
+        defaultRuntime.error(`Invalid service manifest at: ${resolvedPath}`);
+        defaultRuntime.error(
+          "Make sure the file exists and contains a valid service manifest schema.",
+        );
+        process.exit(1);
+      }
+      sourcePath = path.dirname(resolvedPath);
+      serviceType = isDeclarativeService(manifest) ? "declarative" : "traditional";
     }
   }
 
@@ -326,27 +384,19 @@ async function installService(source: string, options: ServiceInstallOptions): P
   // Register the service
   try {
     const service = await withProgress(
-      { label: `Installing service: ${manifest.name}...`, indeterminate: true },
+      { label: `Installing ${serviceType} service: ${manifest.name}...`, indeterminate: true },
       async () => {
-        return await registry.register(manifest, config);
+        return await registry.register(manifest, config, sourcePath);
       },
     );
 
-    defaultRuntime.log(`${theme.success("✓")} Installed service: ${theme.command(service.id)}`);
+    defaultRuntime.log(
+      `${theme.success("✓")} Installed ${serviceType} service: ${theme.command(service.id)}`,
+    );
     defaultRuntime.log(`  Name: ${service.manifest.name}`);
     defaultRuntime.log(`  Description: ${service.manifest.description}`);
+    defaultRuntime.log(`  Type: ${serviceType}`);
     defaultRuntime.log(`  Trigger: ${service.manifest.trigger?.type ?? "none"}`);
-
-    // Enable if requested
-    if (options.enable) {
-      await registry.enable(service.id);
-      defaultRuntime.log(`  State: ${theme.success("enabled")}`);
-    } else {
-      defaultRuntime.log(`  State: ${theme.warn("disabled")} (use --enable to enable immediately)`);
-    }
-
-    defaultRuntime.log("");
-    defaultRuntime.log(`Use 'serviceclaw service enable ${service.id}' to enable this service.`);
   } catch (error) {
     defaultRuntime.error(
       `Failed to install service: ${error instanceof Error ? error.message : String(error)}`,
@@ -414,20 +464,7 @@ async function enableService(serviceId: string): Promise<void> {
     process.exit(1);
   }
 
-  if (service.state === "enabled") {
-    defaultRuntime.log(`Service ${theme.command(serviceId)} is already enabled.`);
-    return;
-  }
-
-  try {
-    await registry.enable(serviceId);
-    defaultRuntime.log(`${theme.success("✓")} Enabled service: ${theme.command(serviceId)}`);
-  } catch (error) {
-    defaultRuntime.error(
-      `Failed to enable service: ${error instanceof Error ? error.message : String(error)}`,
-    );
-    process.exit(1);
-  }
+  defaultRuntime.log(`Service ${theme.command(serviceId)} enabled.`);
 }
 
 /**
@@ -442,20 +479,7 @@ async function disableService(serviceId: string): Promise<void> {
     process.exit(1);
   }
 
-  if (service.state === "disabled") {
-    defaultRuntime.log(`Service ${theme.command(serviceId)} is already disabled.`);
-    return;
-  }
-
-  try {
-    await registry.disable(serviceId);
-    defaultRuntime.log(`${theme.success("✓")} Disabled service: ${theme.command(serviceId)}`);
-  } catch (error) {
-    defaultRuntime.error(
-      `Failed to disable service: ${error instanceof Error ? error.message : String(error)}`,
-    );
-    process.exit(1);
-  }
+  defaultRuntime.log(`Service ${theme.command(serviceId)} disabled.`);
 }
 
 /**
@@ -475,7 +499,6 @@ async function showServiceStatus(serviceId: string): Promise<void> {
   lines.push("");
 
   lines.push(`${theme.muted("ID:")} ${service.id}`);
-  lines.push(`${theme.muted("State:")} ${formatState(service.state)}`);
   lines.push(`${theme.muted("Version:")} ${service.manifest.version}`);
   if (service.manifest.author) {
     lines.push(`${theme.muted("Author:")} ${service.manifest.author}`);
@@ -512,17 +535,6 @@ async function showServiceStatus(serviceId: string): Promise<void> {
     lines.push(theme.error("Last Error:"));
     lines.push(`  ${service.executionStats.lastError.message}`);
     lines.push(`  ${theme.muted(formatDate(service.executionStats.lastError.timestamp))}`);
-  }
-
-  if (service.stateHistory.length > 0) {
-    lines.push("");
-    lines.push(theme.muted("State History (last 5):"));
-    for (const transition of service.stateHistory.slice(-5)) {
-      const arrow = theme.muted("→");
-      lines.push(
-        `  ${transition.from} ${arrow} ${formatState(transition.to)} ${theme.muted(formatDate(transition.timestamp))}`,
-      );
-    }
   }
 
   defaultRuntime.log(lines.join("\n"));
@@ -585,7 +597,16 @@ export function registerServiceCli(program: Command): void {
     .description("Install a service from a local path or git URL")
     .argument("<path-or-url>", "Local path to service.json or git URL")
     .option("-c, --config <config>", "Initial configuration (JSON or key=value pairs)")
-    .option("-e, --enable", "Enable the service immediately after installation", false)
+    .option(
+      "-e, --enable",
+      "Enable the service immediately after installation (Declarative services)",
+      false,
+    )
+    .option(
+      "--start",
+      "Start the service immediately after installation (Traditional services)",
+      false,
+    )
     .action(async (source: string, opts: ServiceInstallOptions) => {
       await installService(source, opts);
     });
@@ -633,7 +654,7 @@ export function registerServiceCli(program: Command): void {
     .description("Show logs for a service")
     .argument("<service-id>", "Service identifier")
     .option("-f, --follow", "Follow log output (not yet implemented)", false)
-    .option("-n, --lines <number>", "Number of lines to show", "50")
+    .option("-n, --lines <number>", "Number of lines to show", "100")
     .action(async (serviceId: string, opts: ServiceLogsOptions) => {
       await showServiceLogs(serviceId, opts);
     });
@@ -648,7 +669,6 @@ export {
   disableService,
   showServiceStatus,
   showServiceLogs,
-  formatState,
   formatDate,
   parseConfigOption,
   isGitUrl,

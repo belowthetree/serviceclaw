@@ -234,7 +234,6 @@ export type AppViewState = {
     servicesLoading: boolean;
     services: ServiceWithStats[];
     servicesError: string | null;
-    servicesBusyId: string | null;
     skillEdits: Record<string, string>;
     skillMessages: Record<string, SkillMessage>;
     skillsBusyKey: string | null;

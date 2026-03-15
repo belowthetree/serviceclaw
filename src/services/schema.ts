@@ -115,9 +115,9 @@ export const ConfigFieldSchema = z.object({
 
 export const ServiceConfigSchema = z.record(z.string(), ConfigFieldSchema);
 
-// Capabilities Schema (Object format with additional properties)
+// Capabilities Schema (supports both array and object formats)
 
-export const ServiceCapabilitiesSchema = z.object({
+export const ServiceCapabilitiesObjectSchema = z.object({
   network: z.boolean().optional(),
   filesystem: z.boolean().optional(),
   shell: z.boolean().optional(),
@@ -129,6 +129,13 @@ export const ServiceCapabilitiesSchema = z.object({
   privilegedTools: z.array(z.string()).optional(),
   requiresConfirmation: z.array(z.string()).optional(),
 });
+
+export const ServiceCapabilitiesArraySchema = z.array(z.enum(ServiceCapabilityEnum));
+
+export const ServiceCapabilitiesSchema = z.union([
+  ServiceCapabilitiesArraySchema,
+  ServiceCapabilitiesObjectSchema,
+]);
 
 // Service Manifest Schema
 
@@ -144,7 +151,7 @@ export const ServiceManifestSchema = z.object({
 
   description: z.string().optional(),
 
-  entry: z.string().regex(relativePathPattern, "Entry must be a relative path"),
+  entry: z.string().regex(relativePathPattern, "Entry must be a relative path").optional(),
 
   ui: UISchema.optional(),
 
@@ -181,6 +188,8 @@ export type ServiceConfig = Record<string, unknown>;
 export type ServiceExecutionConfig = z.infer<typeof ServiceExecutionConfigSchema>;
 export type ServiceRequirements = z.infer<typeof ServiceRequirementsSchema>;
 export type ConfigField = z.infer<typeof ConfigFieldSchema>;
+
+export type ServiceType = "traditional" | "declarative";
 
 export interface ServiceCapabilities {
   network?: boolean;
@@ -222,6 +231,16 @@ export function formatValidationErrors(error: z.ZodError<ServiceManifest>): stri
       return `${path}: ${issue.message}`;
     })
     .join("\n");
+}
+
+export function isTraditionalService(manifest: ServiceManifest): boolean {
+  return (
+    (manifest.entry && typeof manifest.entry === "string") || (!manifest.entry && !manifest.trigger)
+  );
+}
+
+export function isDeclarativeService(manifest: ServiceManifest): boolean {
+  return !!manifest.trigger && !manifest.entry;
 }
 
 export default ServiceManifestSchema;

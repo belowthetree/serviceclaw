@@ -296,10 +296,13 @@ export class ServiceSecurityManager {
     const warnings: SecurityWarning[] = [];
     const { capabilities, requires } = manifest;
 
+    // Type guard: capabilities can be array or object, we need object form for property access
+    const caps = Array.isArray(capabilities) ? undefined : capabilities;
+
     logger.debug(`Validating capabilities for service ${manifest.id}`);
 
     // Check 1: Required tools must be accounted for in capabilities
-    if (requires.tools) {
+    if (requires?.tools) {
       for (const tool of requires.tools) {
         const normalizedTool = normalizeToolName(tool);
 
@@ -327,9 +330,8 @@ export class ServiceSecurityManager {
         // Check if privileged tool is declared
         if (this.isPrivilegedTool(normalizedTool)) {
           const declaredPrivileged =
-            capabilities.privilegedTools?.some(
-              (t: string) => normalizeToolName(t) === normalizedTool,
-            ) ?? false;
+            caps?.privilegedTools?.some((t: string) => normalizeToolName(t) === normalizedTool) ??
+            false;
 
           if (!declaredPrivileged) {
             errors.push({
@@ -344,11 +346,11 @@ export class ServiceSecurityManager {
     }
 
     // Check 2: Confirmation requirements must be subset of privileged tools
-    if (capabilities.requiresConfirmation) {
-      for (const tool of capabilities.requiresConfirmation) {
+    if (caps?.requiresConfirmation) {
+      for (const tool of caps.requiresConfirmation) {
         const normalizedTool = normalizeToolName(tool);
         const declaredPrivileged =
-          capabilities.privilegedTools?.some((t) => normalizeToolName(t) === normalizedTool) ??
+          caps.privilegedTools?.some((t: string) => normalizeToolName(t) === normalizedTool) ??
           false;
 
         if (!declaredPrivileged) {
@@ -364,8 +366,8 @@ export class ServiceSecurityManager {
 
     // Check 3: Validate capability flags are consistent with requirements
     if (
-      capabilities.shell &&
-      !requires.tools?.some((t: string) => {
+      caps?.shell &&
+      !requires?.tools?.some((t: string) => {
         const nt = normalizeToolName(t);
         return nt.includes("bash") || nt.includes("shell") || nt.includes("exec");
       })
@@ -374,12 +376,12 @@ export class ServiceSecurityManager {
         code: "SHELL_ACCESS_DECLARED",
         message: "Shell capability declared but no shell tools required",
         field: "capabilities.shell",
-        details: { requires: requires.tools },
+        details: { requires: requires?.tools },
       });
     }
 
     // Check 4: Warn about wide permissions
-    if (capabilities.privilegedTools?.includes("*")) {
+    if (caps?.privilegedTools?.includes("*")) {
       warnings.push({
         code: "WIDE_TOOL_PERMISSIONS",
         message: "Service declares all tools as privileged - review security implications",
@@ -388,7 +390,7 @@ export class ServiceSecurityManager {
     }
 
     // Check 5: Warn about sensitive capabilities
-    if (capabilities.network) {
+    if (caps?.network) {
       warnings.push({
         code: "NETWORK_ACCESS_DECLARED",
         message: "Service requires network access",
@@ -396,7 +398,7 @@ export class ServiceSecurityManager {
       });
     }
 
-    if (capabilities.filesystem) {
+    if (caps?.filesystem) {
       warnings.push({
         code: "FILESYSTEM_ACCESS_DECLARED",
         message: "Service requires filesystem access",
@@ -404,7 +406,7 @@ export class ServiceSecurityManager {
       });
     }
 
-    if (capabilities.browser) {
+    if (caps?.browser) {
       warnings.push({
         code: "BROWSER_ACCESS_DECLARED",
         message: "Service requires browser automation access",
@@ -413,7 +415,7 @@ export class ServiceSecurityManager {
     }
 
     // Check 6: Validate capabilities against tool policy at install time
-    const allTools = [...(requires.tools ?? []), ...(requires.optionalTools ?? [])];
+    const allTools = [...(requires?.tools ?? []), ...(requires?.optionalTools ?? [])];
     for (const tool of allTools) {
       if (this.isToolDeniedByPolicy(normalizeToolName(tool))) {
         errors.push({
@@ -1011,10 +1013,11 @@ export function getToolsRequiringConfirmation(
   const fullConfig = { ...DEFAULT_SECURITY_CONFIG, ...config };
   const manager = new ServiceSecurityManager(fullConfig);
   const { capabilities, requires } = manifest;
+  const caps = Array.isArray(capabilities) ? undefined : capabilities;
 
-  const allTools = [...(requires.tools ?? []), ...(requires.optionalTools ?? [])];
+  const allTools = [...(requires?.tools ?? []), ...(requires?.optionalTools ?? [])];
 
-  return allTools.filter((tool) => manager.requiresConfirmation(manifest.id, tool, capabilities));
+  return allTools.filter((tool) => manager.requiresConfirmation(manifest.id, tool, caps ?? {}));
 }
 
 /**
@@ -1028,8 +1031,9 @@ export function createSecuritySummary(manifest: ServiceManifest): {
 } {
   const manager = new ServiceSecurityManager();
   const { capabilities, requires } = manifest;
+  const caps = Array.isArray(capabilities) ? undefined : capabilities;
 
-  const allTools = [...(requires.tools ?? []), ...(requires.optionalTools ?? [])];
+  const allTools = [...(requires?.tools ?? []), ...(requires?.optionalTools ?? [])];
 
   const toolsNeedingConfirmation: string[] = [];
   const privilegedTools: string[] = [];
@@ -1051,22 +1055,22 @@ export function createSecuritySummary(manifest: ServiceManifest): {
       maxRiskLevel = risk;
     }
 
-    if (manager.requiresConfirmation(manifest.id, normalized, capabilities)) {
+    if (manager.requiresConfirmation(manifest.id, normalized, caps ?? {})) {
       toolsNeedingConfirmation.push(normalized);
     }
   }
 
   const warnings: string[] = [];
-  if (capabilities.network) {
+  if (caps?.network) {
     warnings.push("Requires network access");
   }
-  if (capabilities.filesystem) {
+  if (caps?.filesystem) {
     warnings.push("Requires filesystem access");
   }
-  if (capabilities.shell) {
+  if (caps?.shell) {
     warnings.push("Requires shell access");
   }
-  if (capabilities.browser) {
+  if (caps?.browser) {
     warnings.push("Requires browser automation");
   }
 

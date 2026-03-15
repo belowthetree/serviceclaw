@@ -1,12 +1,12 @@
 /**
  * Services Status View for Control UI
  *
- * Displays the status of installed services with enable/disable controls.
+ * Displays the installed services with run controls.
  */
 
 import { html, nothing, type TemplateResult } from "lit";
 import { icons } from "../icons.ts";
-import type { ServiceSummary, ServiceState } from "../types.ts";
+import type { ServiceSummary } from "../types.ts";
 
 const warningIcon = html`
   <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -30,34 +30,7 @@ export type ServicesStatusProps = {
   services: ServiceSummary[];
   loading: boolean;
   error: string | null;
-  onEnable: (serviceId: string) => void;
-  onDisable: (serviceId: string) => void;
-};
-
-const stateChipClasses: Record<ServiceState, string> = {
-  enabled: "chip-ok",
-  disabled: "chip-warn",
-  error: "chip-error",
-  validation_error: "chip-error",
-  install_error: "chip-error",
-  pending: "chip-info",
-  validating: "chip-info",
-  installing: "chip-info",
-  installed: "chip-info",
-  uninstalling: "chip-info",
-};
-
-const stateLabels: Record<ServiceState, string> = {
-  enabled: "Enabled",
-  disabled: "Disabled",
-  error: "Error",
-  validation_error: "Validation Error",
-  install_error: "Install Error",
-  pending: "Pending",
-  validating: "Validating",
-  installing: "Installing",
-  installed: "Installed",
-  uninstalling: "Uninstalling",
+  onRun?: (serviceId: string) => void;
 };
 
 const triggerLabels: Record<string, string> = {
@@ -67,50 +40,21 @@ const triggerLabels: Record<string, string> = {
   web: "Web Interface",
 };
 
-function renderStateBadge(state: ServiceState, serviceId: string): TemplateResult {
-  const chipClass = stateChipClasses[state] || "chip-info";
-  const label = stateLabels[state] || state;
-
-  return html`
-    <span
-      class="chip ${chipClass}"
-      data-testid="service-status-${serviceId}"
-      aria-label="Service state: ${label}"
-    >
-      ${label}
-    </span>
-  `;
-}
-
 function renderActionButtons(
   service: ServiceSummary,
-  onEnable: (id: string) => void,
-  onDisable: (id: string) => void,
+  onRun: ((id: string) => void) | undefined,
 ): TemplateResult {
-  const { id, state } = service;
+  const { id, name } = service;
 
-  if (state === "enabled") {
-    return html`
-      <button
-        class="btn btn-secondary"
-        data-testid="service-action-${id}"
-        aria-label="Disable service ${service.name}"
-        @click=${() => onDisable(id)}
-      >
-        Disable
-      </button>
-    `;
-  }
-
-  if (state === "disabled") {
+  if (onRun) {
     return html`
       <button
         class="btn btn-primary"
         data-testid="service-action-${id}"
-        aria-label="Enable service ${service.name}"
-        @click=${() => onEnable(id)}
+        aria-label="Run service ${name}"
+        @click=${() => onRun(id)}
       >
-        Enable
+        Run
       </button>
     `;
   }
@@ -120,8 +64,7 @@ function renderActionButtons(
 
 function renderServiceRow(
   service: ServiceSummary,
-  onEnable: (id: string) => void,
-  onDisable: (id: string) => void,
+  onRun: ((id: string) => void) | undefined,
 ): TemplateResult {
   return html`
     <div
@@ -135,18 +78,15 @@ function renderServiceRow(
           <span class="trigger-type">${triggerLabels[service.triggerType] || service.triggerType}</span>
         </div>
       </div>
-      <div class="service-status">
-        ${renderStateBadge(service.state, service.id)}
-      </div>
       <div class="service-actions">
-        ${renderActionButtons(service, onEnable, onDisable)}
+        ${renderActionButtons(service, onRun)}
       </div>
     </div>
   `;
 }
 
 export function renderServicesStatus(props: ServicesStatusProps): TemplateResult {
-  const { services, loading, error, onEnable, onDisable } = props;
+  const { services, loading, error, onRun } = props;
 
   return html`
     <div class="services-status-view" role="region" aria-label="Services status">
@@ -155,8 +95,7 @@ export function renderServicesStatus(props: ServicesStatusProps): TemplateResult
           ${icons.settings} Services Status
         </h2>
         <p class="services-status-header__description">
-          View and manage your installed automation services. Enable or disable
-          services to control their active state.
+          View and run your installed automation services.
         </p>
       </div>
 
@@ -206,10 +145,9 @@ export function renderServicesStatus(props: ServicesStatusProps): TemplateResult
             >
               <div class="services-list-header" role="row" aria-hidden="true">
                 <div class="header-cell header-name">Service</div>
-                <div class="header-cell header-status">Status</div>
                 <div class="header-cell header-actions">Actions</div>
               </div>
-              ${services.map((service) => renderServiceRow(service, onEnable, onDisable))}
+              ${services.map((service) => renderServiceRow(service, onRun))}
             </div>
           `
           : nothing
@@ -351,7 +289,7 @@ export const servicesStatusStyles = `
 
   .services-list-header {
     display: grid;
-    grid-template-columns: 1fr 120px 100px;
+    grid-template-columns: 1fr 100px;
     gap: 16px;
     padding: 12px 16px;
     background: var(--surface-secondary, #27272a);
@@ -365,7 +303,7 @@ export const servicesStatusStyles = `
 
   .service-row {
     display: grid;
-    grid-template-columns: 1fr 120px 100px;
+    grid-template-columns: 1fr 100px;
     gap: 16px;
     align-items: center;
     padding: 16px;
@@ -399,41 +337,6 @@ export const servicesStatusStyles = `
   .trigger-type {
     font-size: 12px;
     color: var(--text-tertiary, #71717a);
-  }
-
-  .service-status {
-    display: flex;
-  }
-
-  .chip {
-    display: inline-flex;
-    align-items: center;
-    padding: 4px 10px;
-    border-radius: 9999px;
-    font-size: 12px;
-    font-weight: 500;
-    background: var(--surface-secondary, #27272a);
-    color: var(--text-secondary, #a1a1aa);
-  }
-
-  .chip-ok {
-    background: rgba(16, 185, 129, 0.1);
-    color: #10b981;
-  }
-
-  .chip-warn {
-    background: rgba(245, 158, 11, 0.1);
-    color: #f59e0b;
-  }
-
-  .chip-error {
-    background: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
-  }
-
-  .chip-info {
-    background: rgba(59, 130, 246, 0.1);
-    color: #3b82f6;
   }
 
   .service-actions {
