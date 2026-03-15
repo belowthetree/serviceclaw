@@ -597,6 +597,7 @@ export async function startGatewayServer(
     removeChatRun,
     chatAbortControllers,
     toolEventRecipients,
+    setServiceLifecycleManager,
   } = await createGatewayRuntimeState({
     cfg: cfgAtStart,
     bindHost,
@@ -829,6 +830,8 @@ export async function startGatewayServer(
       logBrowser,
     }));
   }
+
+  setServiceLifecycleManager(serviceLifecycleManager);
 
   const gatewayRequestContext: import("./server-methods/types.js").GatewayRequestContext = {
     deps,

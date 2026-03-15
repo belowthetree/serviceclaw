@@ -62,6 +62,7 @@ export class ServiceClient extends EventEmitter {
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private pendingRequests = new Map<RequestId, PendingRequest>();
   private eventHandlers = new Map<string, Set<EventHandler>>();
+  private actionHandlers = new Map<string, (params: unknown) => unknown>();
 
   constructor(serviceId: ServiceId, options: ServiceClientOptions = {}) {
     super();
@@ -237,6 +238,14 @@ export class ServiceClient extends EventEmitter {
     return this.reconnectAttempts;
   }
 
+  registerActionHandler(action: string, handler: (params: unknown) => unknown): void {
+    this.actionHandlers.set(action, handler);
+  }
+
+  unregisterActionHandler(action: string): void {
+    this.actionHandlers.delete(action);
+  }
+
   private buildWebSocketUrl(baseUrl: string): string {
     const url = new URL(baseUrl);
     url.searchParams.set("serviceId", this.serviceId);
@@ -291,8 +300,12 @@ export class ServiceClient extends EventEmitter {
         this.handleStopRequest(message);
         break;
 
+      case "service.action": {
+        this.handleServiceAction(message);
+        break;
+      }
+
       case "service.event": {
-        // Forward generic events to listeners
         const eventMessage = message as { payload?: { event?: string; data?: unknown } };
         if (eventMessage.payload?.event) {
           this.emit(eventMessage.payload.event, eventMessage.payload.data);
@@ -301,7 +314,6 @@ export class ServiceClient extends EventEmitter {
       }
 
       default:
-        // Forward unknown message types as generic events
         this.emit(message.type, message);
     }
   }
@@ -331,6 +343,72 @@ export class ServiceClient extends EventEmitter {
       reason: message.payload.reason,
       force: message.payload.force,
     });
+  }
+
+  private handleServiceAction(message: SCPMessage): void {
+    const actionMessage = message as {
+      requestId: string;
+      payload?: { action?: string; params?: unknown };
+    };
+
+    const action = actionMessage.payload?.action;
+    const params = actionMessage.payload?.params;
+    const requestId = actionMessage.requestId;
+
+    if (!action) {
+      this.sendActionResponse(requestId, false, undefined, {
+        code: 1004,
+        message: "Missing action in service.action message",
+      });
+      return;
+    }
+
+    const handler = this.actionHandlers.get(action);
+    if (!handler) {
+      this.sendActionResponse(requestId, false, undefined, {
+        code: 3000,
+        message: `No handler registered for action: ${action}`,
+      });
+      return;
+    }
+
+    void (async () => {
+      try {
+        const result = await Promise.resolve(handler(params));
+        this.sendActionResponse(requestId, true, result);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        this.sendActionResponse(requestId, false, undefined, {
+          code: 3001,
+          message: errorMessage,
+        });
+      }
+    })();
+  }
+
+  private sendActionResponse(
+    requestId: string,
+    success: boolean,
+    data?: unknown,
+    error?: SCPError,
+  ): void {
+    if (!this.ws || !this.connected) {
+      return;
+    }
+
+    const message: SCPMessage = {
+      type: "agent.response",
+      serviceId: this.serviceId,
+      requestId,
+      timestamp: new Date().toISOString(),
+      payload: {
+        success,
+        data,
+        error,
+      },
+    };
+
+    this.ws.send(JSON.stringify(message));
   }
 
   private sendMessage(

@@ -155,9 +155,21 @@ export type SCPServerOptions = {
   onDisconnect?: (serviceId: ServiceId, connection: ServiceConnection) => void;
 };
 
+export type ServiceApiResponse = {
+  success: boolean;
+  data?: unknown;
+  error?: SCPError;
+};
+
 export type SCPServer = {
   handleUpgrade: (request: IncomingMessage, socket: WebSocket) => void;
   broadcastToService: (serviceId: ServiceId, message: SCPMessage) => boolean;
+  sendActionAndWait: (
+    serviceId: ServiceId,
+    action: string,
+    params: unknown,
+    timeoutMs?: number,
+  ) => Promise<ServiceApiResponse>;
   getConnectionStats: () => {
     totalConnections: number;
     services: Map<ServiceId, number>;
@@ -168,6 +180,13 @@ export type SCPServer = {
 export function createSCPServer(options: SCPServerOptions): SCPServer {
   const { logger } = options;
   const connections = new Map<ServiceId, ServiceConnection>();
+  const pendingRequests = new Map<
+    string,
+    {
+      resolve: (response: ServiceApiResponse) => void;
+      timeout: ReturnType<typeof setTimeout>;
+    }
+  >();
   const log = logger.child("scp");
 
   function createError(code: number, message: string, details?: Record<string, unknown>): SCPError {
@@ -309,6 +328,9 @@ export function createSCPServer(options: SCPServerOptions): SCPServer {
           ).catch((err) => log.error(`onServiceStarted handler error: ${String(err)}`));
         }
 
+        sendSuccess(connection.socket, connection.serviceId, baseMessage.requestId, {
+          acknowledged: true,
+        });
         break;
       }
 
@@ -419,6 +441,31 @@ export function createSCPServer(options: SCPServerOptions): SCPServer {
             );
           }
         })();
+        break;
+      }
+
+      case "agent.response": {
+        const pending = pendingRequests.get(baseMessage.requestId);
+        if (pending) {
+          clearTimeout(pending.timeout);
+          pendingRequests.delete(baseMessage.requestId);
+
+          const parsedMessage = parsed as {
+            payload: {
+              success: boolean;
+              data?: unknown;
+              error?: SCPError;
+            };
+          };
+
+          pending.resolve({
+            success: parsedMessage.payload.success,
+            data: parsedMessage.payload.data,
+            error: parsedMessage.payload.error,
+          });
+        } else {
+          log.warn(`Received agent.response for unknown requestId: ${baseMessage.requestId}`);
+        }
         break;
       }
 
@@ -569,6 +616,73 @@ export function createSCPServer(options: SCPServerOptions): SCPServer {
         log.error(`Failed to broadcast to ${serviceId}: ${String(err)}`);
         return false;
       }
+    },
+
+    sendActionAndWait: async (
+      serviceId: ServiceId,
+      action: string,
+      params: unknown,
+      timeoutMs = 30000,
+    ): Promise<ServiceApiResponse> => {
+      const connection = connections.get(serviceId);
+      if (!connection) {
+        return {
+          success: false,
+          error: createError(
+            SCPErrorCodes.SERVICE_NOT_FOUND,
+            `Service '${serviceId}' is not connected`,
+          ),
+        };
+      }
+
+      if (connection.socket.readyState !== connection.socket.OPEN) {
+        return {
+          success: false,
+          error: createError(
+            SCPErrorCodes.SERVICE_NOT_FOUND,
+            `Service '${serviceId}' socket is not open`,
+          ),
+        };
+      }
+
+      const requestId = randomUUID();
+
+      return new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          pendingRequests.delete(requestId);
+          resolve({
+            success: false,
+            error: createError(
+              SCPErrorCodes.TIMEOUT,
+              `Action '${action}' timed out after ${timeoutMs}ms`,
+            ),
+          });
+        }, timeoutMs);
+
+        pendingRequests.set(requestId, { resolve, timeout });
+
+        const message: SCPMessage = {
+          type: "service.action",
+          serviceId,
+          requestId,
+          timestamp: new Date().toISOString(),
+          payload: { action, params },
+        };
+
+        try {
+          connection.socket.send(JSON.stringify(message));
+        } catch (err) {
+          clearTimeout(timeout);
+          pendingRequests.delete(requestId);
+          resolve({
+            success: false,
+            error: createError(
+              SCPErrorCodes.INTERNAL_ERROR,
+              `Failed to send action: ${String(err)}`,
+            ),
+          });
+        }
+      });
     },
 
     getConnectionStats: () => {

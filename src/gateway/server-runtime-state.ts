@@ -90,6 +90,7 @@ export async function createGatewayRuntimeState(params: {
   chatAbortControllers: Map<string, ChatAbortControllerEntry>;
   toolEventRecipients: ReturnType<typeof createToolEventRecipientRegistry>;
   serviceLifecycleManager: ServiceLifecycleManager | null;
+  setServiceLifecycleManager: (manager: ServiceLifecycleManager | null) => void;
 }> {
   let canvasHost: CanvasHostHandler | null = null;
   if (params.canvasHostEnabled) {
@@ -151,6 +152,11 @@ export async function createGatewayRuntimeState(params: {
     logger: params.logHooks,
   });
 
+  // Use a mutable object to hold the serviceLifecycleManager so it can be updated after creation
+  const lifecycleManagerHolder: { current: ServiceLifecycleManager | null } = {
+    current: params.serviceLifecycleManager ?? null,
+  };
+
   for (const host of bindHosts) {
     const httpServer = createGatewayHttpServer({
       canvasHost,
@@ -170,6 +176,9 @@ export async function createGatewayRuntimeState(params: {
       rateLimiter: params.rateLimiter,
       getReadiness: params.getReadiness,
       tlsOptions: params.gatewayTls?.enabled ? params.gatewayTls.tlsOptions : undefined,
+      scpServer,
+      serviceLifecycleManager: params.serviceLifecycleManager ?? undefined,
+      getServiceLifecycleManager: () => lifecycleManagerHolder.current,
     });
     try {
       await listenGatewayHttpServer({
@@ -220,6 +229,10 @@ export async function createGatewayRuntimeState(params: {
   const chatAbortControllers = new Map<string, ChatAbortControllerEntry>();
   const toolEventRecipients = createToolEventRecipientRegistry();
 
+  const setServiceLifecycleManager = (manager: ServiceLifecycleManager | null) => {
+    lifecycleManagerHolder.current = manager;
+  };
+
   return {
     canvasHost,
     httpServer,
@@ -239,5 +252,6 @@ export async function createGatewayRuntimeState(params: {
     chatAbortControllers,
     toolEventRecipients,
     serviceLifecycleManager: params.serviceLifecycleManager ?? null,
+    setServiceLifecycleManager,
   };
 }

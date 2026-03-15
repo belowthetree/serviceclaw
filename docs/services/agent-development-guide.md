@@ -10,9 +10,10 @@
 4. [Service Lifecycle](#service-lifecycle)
 5. [SCP Protocol Communication](#scp-protocol-communication)
 6. [UI Integration](#ui-integration)
-7. [Agent Integration](#agent-integration)
-8. [Best Practices](#best-practices)
-9. [Troubleshooting](#troubleshooting)
+7. [Service API Proxy](#service-api-proxy)
+8. [Agent Integration](#agent-integration)
+9. [Best Practices](#best-practices)
+10. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -611,7 +612,8 @@ services/helloworld/
     "entry": "ui/index.html"
   },
   "capabilities": {
-    "network": true
+    "network": true,
+    "filesystem": true
   },
   "category": "custom"
 }
@@ -623,30 +625,38 @@ services/helloworld/
 - `entry`: Path to the main TypeScript file (relative to service root)
 - `ui.entry`: Path to the UI HTML file
 - `capabilities.network`: Required for WebSocket connection to the Agent
+- `capabilities.filesystem`: Required for file system operations (saving user input)
 
 ### script/entry.ts
 
-This example uses the inline SCP client (no external SDK dependency required):
+This example uses the inline SCP client (no external SDK dependency required) and demonstrates UI event handling with file saving:
 
 ```typescript
 import { randomUUID } from "node:crypto";
+import { writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
 
 // ============================================================================
-// Inline SCP Client - minimal implementation for service communication
+// Inline SCP Client - implements Service Communication Protocol
 // ============================================================================
 function createSCPClient(serviceId: string, options: { name: string; version: string }) {
   let ws: WebSocket | null = null;
   let connected = false;
   const handlers = new Map<string, Set<(data: unknown) => void>>();
+  const pendingRequests = new Map<
+    string,
+    { resolve: (value: unknown) => void; reject: (err: Error) => void }
+  >();
 
-  function send(type: string, payload: unknown): void {
+  function send(type: string, payload: unknown, requestId?: string): void {
     if (!ws || !connected) return;
     ws.send(
       JSON.stringify({
         type,
         serviceId,
-        requestId: randomUUID(),
+        requestId: requestId ?? randomUUID(),
         timestamp: new Date().toISOString(),
         payload,
       }),
@@ -660,6 +670,33 @@ function createSCPClient(serviceId: string, options: { name: string; version: st
 
   function emit(event: string, data?: unknown): void {
     handlers.get(event)?.forEach((h) => h(data));
+  }
+
+  function emitEvent(event: string, data?: unknown): void {
+    send("service.event", { event, data });
+  }
+
+  function callAction(action: string, params: unknown, timeoutMs = 30000): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      const requestId = randomUUID();
+      const timeout = setTimeout(() => {
+        pendingRequests.delete(requestId);
+        reject(new Error(`Action '${action}' timed out`));
+      }, timeoutMs);
+
+      pendingRequests.set(requestId, {
+        resolve: (value: unknown) => {
+          clearTimeout(timeout);
+          resolve(value);
+        },
+        reject: (err: Error) => {
+          clearTimeout(timeout);
+          reject(err);
+        },
+      });
+
+      send("service.action", { action, params }, requestId);
+    });
   }
 
   async function connect(url: string): Promise<void> {
@@ -679,8 +716,32 @@ function createSCPClient(serviceId: string, options: { name: string; version: st
       });
 
       ws.on("message", (data) => {
-        const msg = JSON.parse(data.toString());
-        if (msg.type === "agent.stop-request") emit("stop-requested", msg.payload);
+        try {
+          const msg = JSON.parse(data.toString());
+
+          if (msg.type === "agent.stop-request") {
+            emit("stop-requested", msg.payload);
+          } else if (msg.type === "agent.response") {
+            const pending = pendingRequests.get(msg.requestId);
+            if (pending) {
+              pendingRequests.delete(msg.requestId);
+              const payload = msg.payload as {
+                success: boolean;
+                data?: unknown;
+                error?: { message: string };
+              };
+              if (payload.success) {
+                pending.resolve(payload.data);
+              } else {
+                pending.reject(new Error(payload.error?.message ?? "Unknown error"));
+              }
+            }
+          } else if (msg.type === "ui.event") {
+            emit("ui.event", msg.payload);
+          }
+        } catch (err) {
+          console.error("[helloworld] Error parsing message:", err);
+        }
       });
 
       ws.on("close", (code, reason) => emit("disconnected", { code, reason: reason.toString() }));
@@ -694,7 +755,7 @@ function createSCPClient(serviceId: string, options: { name: string; version: st
     connected = false;
   }
 
-  return { connect, disconnect, on, isConnected: () => connected };
+  return { connect, disconnect, on, emitEvent, callAction, isConnected: () => connected };
 }
 
 // ============================================================================
@@ -703,21 +764,69 @@ function createSCPClient(serviceId: string, options: { name: string; version: st
 const SERVICE_ID = "helloworld";
 const AGENT_URL = "ws://localhost:18789/__openclaw__/scp";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const SERVICE_ROOT = join(__dirname, "..");
+
+function saveToFile(content: string): { success: boolean; path?: string; error?: string } {
+  try {
+    const dataDir = join(SERVICE_ROOT, "data");
+    if (!existsSync(dataDir)) {
+      mkdirSync(dataDir, { recursive: true });
+    }
+    const filePath = join(dataDir, "user-input.txt");
+    writeFileSync(filePath, content, "utf-8");
+    console.log(`[helloworld] Saved to: ${filePath}`);
+    return { success: true, path: filePath };
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    console.error("[helloworld] Save error:", error);
+    return { success: false, error };
+  }
+}
+
 async function main() {
   const client = createSCPClient(SERVICE_ID, { name: "HelloWorld", version: "1.0.0" });
 
-  client.on("connected", () => console.log("helloworld"));
-  client.on("disconnected", ({ code, reason }: { code: number; reason: string }) =>
-    console.log(`[helloworld] Disconnected: ${code} - ${reason}`),
-  );
-  client.on("stop-requested", ({ reason }: { reason: string }) => {
+  client.on("connected", () => console.log("[helloworld] Connected to Agent"));
+
+  client.on("disconnected", (data) => {
+    const { code, reason } = data as { code: number; reason: string };
+    console.log(`[helloworld] Disconnected: ${code} - ${reason}`);
+  });
+
+  client.on("stop-requested", (data) => {
+    const { reason } = data as { reason: string };
     console.log(`[helloworld] Stop requested: ${reason}`);
     client.disconnect();
     process.exit(0);
   });
 
+  client.on("ui.event", async (data) => {
+    const event = data as { type: string; messageId?: string; payload?: unknown };
+    console.log("[helloworld] UI event:", event.type, event.payload);
+
+    if (event.type === "save" && event.payload) {
+      const { content } = event.payload as { content: string };
+      const result = saveToFile(content);
+
+      client.emitEvent("ui.response", {
+        messageId: event.messageId,
+        type: "save.result",
+        payload: result,
+      });
+
+      client.emitEvent("input.saved", {
+        content,
+        savedAt: new Date().toISOString(),
+        path: result.path,
+      });
+    }
+  });
+
   await client.connect(AGENT_URL);
   console.log("[helloworld] Service started");
+  console.log(`[helloworld] Service root: ${SERVICE_ROOT}`);
 
   process.on("SIGINT", () => {
     client.disconnect();
@@ -730,10 +839,14 @@ main().catch(console.error);
 
 **Key concepts:**
 
-- **Inline SCP Client**: Minimal WebSocket client implementing SCP protocol - no external SDK required
+- **Inline SCP Client**: WebSocket client implementing SCP protocol - no external SDK required
 - **WebSocket endpoint**: `ws://localhost:18789/__openclaw__/scp?serviceId={id}`
 - **Handshake**: Send `service.started` message immediately after connection
 - **Message format**: All messages include `type`, `serviceId`, `requestId`, `timestamp`, `payload`
+- **emitEvent**: Send events to the Agent and UI via `service.event` messages
+- **callAction**: Request-response pattern for Agent actions with timeout handling
+- **UI event handling**: Listen for `ui.event` messages from the Agent (forwarded from UI postMessage)
+- **File saving**: Use Node.js `fs` module to save user input to service root directory
 - **Graceful shutdown**: Send `service.stopped` before closing connection
 
 ### ui/index.html
@@ -780,29 +893,147 @@ main().catch(console.error);
         border-radius: 6px;
         display: inline-block;
       }
+      .input-section {
+        margin-top: 30px;
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        align-items: center;
+      }
+      .input-field {
+        padding: 12px 16px;
+        font-size: 1rem;
+        border: 2px solid #374151;
+        border-radius: 8px;
+        background: #1f2937;
+        color: #e4e4e7;
+        width: 300px;
+        outline: none;
+        transition: border-color 0.2s;
+      }
+      .input-field:focus {
+        border-color: #10b981;
+      }
+      .input-field::placeholder {
+        color: #6b7280;
+      }
+      .save-btn {
+        padding: 12px 24px;
+        font-size: 1rem;
+        background: #10b981;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        transition:
+          background 0.2s,
+          transform 0.1s;
+      }
+      .save-btn:hover {
+        background: #059669;
+      }
+      .save-btn:active {
+        transform: scale(0.98);
+      }
+      .save-btn:disabled {
+        background: #374151;
+        cursor: not-allowed;
+      }
+      .result {
+        margin-top: 20px;
+        padding: 12px 16px;
+        border-radius: 8px;
+        font-size: 0.9rem;
+        max-width: 400px;
+        text-align: left;
+      }
+      .result.success {
+        background: rgba(16, 185, 129, 0.2);
+        border: 1px solid #10b981;
+        color: #10b981;
+      }
+      .result.error {
+        background: rgba(239, 68, 68, 0.2);
+        border: 1px solid #ef4444;
+        color: #ef4444;
+      }
     </style>
   </head>
   <body>
     <div class="welcome">
-      <h1>👋 Hello World!</h1>
+      <h1>Hello World!</h1>
       <p>Welcome to your first OpenClaw service.</p>
       <div class="status">Connected to Agent</div>
+
+      <div class="input-section">
+        <input type="text" id="userInput" class="input-field" placeholder="Enter text to save..." />
+        <button id="saveBtn" class="save-btn">Save</button>
+      </div>
+
+      <div id="result" class="result" style="display: none;"></div>
     </div>
 
     <script>
-      // Listen for messages from the service
+      function generateId() {
+        return Math.random().toString(36).substring(2, 9);
+      }
+
       window.addEventListener("message", (event) => {
         if (event.data.type === "ui.response") {
-          console.log("Received from service:", event.data);
+          const { type, payload } = event.data.payload || {};
+          const resultDiv = document.getElementById("result");
+
+          if (type === "save.result") {
+            resultDiv.style.display = "block";
+            document.getElementById("saveBtn").disabled = false;
+
+            if (payload.success) {
+              resultDiv.className = "result success";
+              resultDiv.textContent = "Saved to: " + payload.path;
+            } else {
+              resultDiv.className = "result error";
+              resultDiv.textContent = "Error: " + payload.error;
+            }
+          }
         }
       });
 
-      // Notify service that UI is ready
+      document.getElementById("saveBtn").addEventListener("click", () => {
+        const input = document.getElementById("userInput");
+        const content = input.value.trim();
+
+        if (!content) {
+          const resultDiv = document.getElementById("result");
+          resultDiv.style.display = "block";
+          resultDiv.className = "result error";
+          resultDiv.textContent = "Please enter some text";
+          return;
+        }
+
+        document.getElementById("saveBtn").disabled = true;
+
+        window.parent.postMessage(
+          {
+            source: "helloworld-ui",
+            type: "save",
+            messageId: generateId(),
+            payload: { content },
+          },
+          "*",
+        );
+      });
+
+      document.getElementById("userInput").addEventListener("keypress", (e) => {
+        if (e.key === "Enter") {
+          document.getElementById("saveBtn").click();
+        }
+      });
+
       window.parent.postMessage(
         {
           source: "helloworld-ui",
           type: "ui.ready",
-          messageId: Math.random().toString(36).substring(2, 9),
+          messageId: generateId(),
         },
         "*",
       );
@@ -815,6 +1046,11 @@ main().catch(console.error);
 
 - Styled to match OpenClaw's dark theme
 - Uses `window.parent.postMessage()` to communicate with the service
+- **Input field**: Text input for user content
+- **Save button**: Triggers save action via postMessage
+- **Event flow**: UI → `postMessage` → Service → `emitEvent` → UI
+- **Response handling**: Listen for `ui.response` messages from the service
+- Keyboard support: Enter key triggers save action
 - Listens for `message` events from the service via `window.addEventListener`
 - Displays connection status to the user
 
@@ -1097,6 +1333,359 @@ function notifyUI(event: string, data: any) {
     payload: data,
   });
 }
+```
+
+---
+
+## Service API Proxy
+
+The Gateway provides an HTTP API proxy that allows Service UI (running in an iframe) to communicate directly with the Service backend through synchronous HTTP requests.
+
+### Overview
+
+When a service UI needs to send data to its backend, it can use the API proxy endpoint instead of postMessage or WebSocket. This enables simpler request-response patterns.
+
+### API Endpoint
+
+```
+POST /__openclaw__/services/{serviceId}/api/{action}
+```
+
+- `serviceId`: The service identifier
+- `action`: The action name to invoke
+
+### Request Format
+
+```json
+{
+  "params": {
+    // Action-specific parameters
+  }
+}
+```
+
+### Response Format
+
+Success:
+
+```json
+{
+  "success": true,
+  "data": {
+    // Action result
+  }
+}
+```
+
+Error:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": 2000,
+    "message": "Service 'helloworld' is not running"
+  }
+}
+```
+
+### HTTP Status Codes
+
+| Status | Description                     |
+| ------ | ------------------------------- |
+| 200    | Success                         |
+| 405    | Method not allowed (use POST)   |
+| 500    | Internal error or action failed |
+| 503    | Service not running             |
+| 504    | Request timeout (30 seconds)    |
+
+### Service-Side Implementation
+
+Register an action handler in your service entry point:
+
+```typescript
+// script/entry.ts
+import { ServiceClient } from "@openclaw/service-sdk";
+
+const client = new ServiceClient("my-service", {
+  name: "My Service",
+  version: "1.0.0",
+});
+
+// Register action handler
+client.registerActionHandler("save", (params) => {
+  const { content } = params as { content: string };
+
+  // Process the request
+  const result = saveToFile(content);
+
+  // Return result (will be wrapped in { success: true, data: result })
+  return result;
+});
+
+await client.connect("ws://localhost:18789/__openclaw__/scp");
+```
+
+### UI-Side Implementation
+
+Call the API from your service UI:
+
+```javascript
+// ui/index.html
+async function saveContent(content) {
+  try {
+    const response = await fetch("/__openclaw__/services/my-service/api/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ params: { content } }),
+    });
+
+    const result = await response.json();
+
+    if (response.ok && result.success) {
+      console.log("Saved:", result.data);
+    } else if (response.status === 503) {
+      console.error("Service is not running");
+    } else if (response.status === 504) {
+      console.error("Request timed out");
+    } else {
+      console.error("Error:", result.error?.message);
+    }
+  } catch (err) {
+    console.error("Network error:", err.message);
+  }
+}
+```
+
+### Error Codes
+
+| Code | Name              | Description                      |
+| ---- | ----------------- | -------------------------------- |
+| 2000 | SERVICE_NOT_FOUND | Service is not connected         |
+| 3000 | ACTION_NOT_FOUND  | No handler registered for action |
+| 3001 | ACTION_FAILED     | Handler threw an error           |
+| 3004 | TIMEOUT           | Request timed out (30s)          |
+
+### When to Use
+
+- **Use API Proxy**: Simple request-response patterns, form submissions, data fetching
+- **Use postMessage**: Real-time updates, streaming data, bidirectional communication
+- **Use WebSocket (SCP)**: Complex protocols, custom message types, service-to-agent communication
+
+### Complete Example: HelloWorld Service
+
+Here's a complete example showing both service and UI implementation:
+
+**Service Entry (`script/entry.ts`):**
+
+```typescript
+import { writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import WebSocket from "ws";
+
+// Inline SCP Client with action handler support
+function createSCPClient(serviceId: string, options: { name: string; version: string }) {
+  let ws: WebSocket | null = null;
+  let connected = false;
+  const actionHandlers = new Map<string, (params: unknown) => unknown>();
+
+  function send(type: string, payload: unknown, requestId?: string): void {
+    if (!ws || !connected) return;
+    ws.send(
+      JSON.stringify({
+        type,
+        serviceId,
+        requestId: requestId ?? crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        payload,
+      }),
+    );
+  }
+
+  // Register action handler for API proxy
+  function registerActionHandler(action: string, handler: (params: unknown) => unknown): void {
+    actionHandlers.set(action, handler);
+  }
+
+  async function connect(url: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      ws = new WebSocket(`${url}?serviceId=${serviceId}`);
+
+      ws.on("open", () => {
+        connected = true;
+        send("service.started", { name: options.name, version: options.version });
+        resolve();
+      });
+
+      ws.on("message", (data) => {
+        const msg = JSON.parse(data.toString());
+
+        // Handle incoming action requests from API proxy
+        if (msg.type === "service.action") {
+          const action = msg.payload?.action;
+          const params = msg.payload?.params;
+          const requestId = msg.requestId;
+
+          if (action && actionHandlers.has(action)) {
+            try {
+              const result = actionHandlers.get(action)!(params);
+              send("agent.response", { success: true, data: result }, requestId);
+            } catch (err) {
+              send(
+                "agent.response",
+                {
+                  success: false,
+                  error: { code: 3001, message: String(err) },
+                },
+                requestId,
+              );
+            }
+          } else {
+            send(
+              "agent.response",
+              {
+                success: false,
+                error: { code: 3000, message: `Unknown action: ${action}` },
+              },
+              requestId,
+            );
+          }
+        }
+      });
+    });
+  }
+
+  return { connect, registerActionHandler, send };
+}
+
+// Service implementation
+const SERVICE_ID = "helloworld";
+const SERVICE_ROOT = dirname(fileURLToPath(import.meta.url));
+
+function saveToFile(content: string): { success: boolean; path?: string; error?: string } {
+  try {
+    const dataDir = join(SERVICE_ROOT, "data");
+    if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
+
+    const filePath = join(dataDir, "user-input.txt");
+    writeFileSync(filePath, content, "utf-8");
+
+    return { success: true, path: filePath };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+async function main() {
+  const client = createSCPClient(SERVICE_ID, { name: "HelloWorld", version: "1.0.0" });
+
+  // Register the "save" action for API proxy
+  client.registerActionHandler("save", (params) => {
+    const { content } = params as { content: string };
+    return saveToFile(content);
+  });
+
+  await client.connect("ws://localhost:18789/__openclaw__/scp");
+  console.log("Service started");
+}
+
+main().catch(console.error);
+```
+
+**UI (`ui/index.html`):**
+
+```html
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>HelloWorld</title>
+    <style>
+      body {
+        font-family: system-ui;
+        background: #1a1a2e;
+        color: #e4e4e7;
+      }
+      .input-field {
+        padding: 12px;
+        border: 2px solid #374151;
+        border-radius: 8px;
+      }
+      .save-btn {
+        padding: 12px 24px;
+        background: #10b981;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      .result {
+        margin-top: 20px;
+        padding: 12px;
+        border-radius: 8px;
+      }
+      .result.success {
+        background: rgba(16, 185, 129, 0.2);
+        border: 1px solid #10b981;
+      }
+      .result.error {
+        background: rgba(239, 68, 68, 0.2);
+        border: 1px solid #ef4444;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Hello World!</h1>
+    <input type="text" id="userInput" class="input-field" placeholder="Enter text to save..." />
+    <button id="saveBtn" class="save-btn">Save</button>
+    <div id="result" class="result" style="display: none;"></div>
+
+    <script>
+      async function saveContent(content) {
+        const resultDiv = document.getElementById("result");
+        const saveBtn = document.getElementById("saveBtn");
+
+        try {
+          const response = await fetch("/__openclaw__/services/helloworld/api/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ params: { content } }),
+          });
+
+          const result = await response.json();
+          resultDiv.style.display = "block";
+          saveBtn.disabled = false;
+
+          if (response.ok && result.success) {
+            resultDiv.className = "result success";
+            resultDiv.textContent = `Saved to: ${result.data.path}`;
+          } else if (response.status === 503) {
+            resultDiv.className = "result error";
+            resultDiv.textContent = "Service is not running";
+          } else if (response.status === 504) {
+            resultDiv.className = "result error";
+            resultDiv.textContent = "Request timed out";
+          } else {
+            resultDiv.className = "result error";
+            resultDiv.textContent = `Error: ${result.error?.message || "Unknown error"}`;
+          }
+        } catch (err) {
+          resultDiv.style.display = "block";
+          saveBtn.disabled = false;
+          resultDiv.className = "result error";
+          resultDiv.textContent = `Network error: ${err.message}`;
+        }
+      }
+
+      document.getElementById("saveBtn").addEventListener("click", () => {
+        const content = document.getElementById("userInput").value.trim();
+        if (!content) return;
+        document.getElementById("saveBtn").disabled = true;
+        saveContent(content);
+      });
+    </script>
+  </body>
+</html>
 ```
 
 ---

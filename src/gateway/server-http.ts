@@ -69,6 +69,7 @@ import {
 } from "./server/plugins-http.js";
 import type { ReadinessChecker } from "./server/readiness.js";
 import type { GatewayWsClient } from "./server/ws-types.js";
+import { handleServicesApiRequest } from "./services-api.js";
 import { handleServicesHttpRequest } from "./services-http.js";
 import { handleToolsInvokeHttpRequest } from "./tools-invoke-http.js";
 
@@ -581,10 +582,14 @@ export function createGatewayHttpServer(opts: {
   handlePluginRequest?: PluginHttpRequestHandler;
   shouldEnforcePluginGatewayAuth?: (pathContext: PluginRoutePathContext) => boolean;
   resolvedAuth: ResolvedGatewayAuth;
-  /** Optional rate limiter for auth brute-force protection. */
   rateLimiter?: AuthRateLimiter;
   getReadiness?: ReadinessChecker;
   tlsOptions?: TlsOptions;
+  scpServer?: SCPServer;
+  serviceLifecycleManager?: import("../services/lifecycle.js").ServiceLifecycleManager;
+  getServiceLifecycleManager?: () =>
+    | import("../services/lifecycle.js").ServiceLifecycleManager
+    | null;
 }): HttpServer {
   const {
     canvasHost,
@@ -736,6 +741,26 @@ export function createGatewayHttpServer(opts: {
           rateLimiter,
         }),
       );
+
+      // Add services-api stage before services-http to handle API requests first
+      // Use getter function to get the latest serviceLifecycleManager value
+      if (opts.scpServer) {
+        requestStages.push({
+          name: "services-api",
+          run: async () => {
+            const lifecycleManager =
+              opts.getServiceLifecycleManager?.() ?? opts.serviceLifecycleManager;
+            if (!lifecycleManager) {
+              return false;
+            }
+            const handled = await handleServicesApiRequest(req, res, {
+              scpServer: opts.scpServer!,
+              lifecycleManager: lifecycleManager,
+            });
+            return handled;
+          },
+        });
+      }
 
       requestStages.push({
         name: "services-http",
