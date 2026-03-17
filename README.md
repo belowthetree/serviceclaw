@@ -8,6 +8,10 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
 </p>
 
+<p align="center">
+  <a href="README.zh-CN.md">中文</a> | English
+</p>
+
 **ServiceClaw** is a service-based AI agent platform built on the **Service Communication Protocol (SCP)**. Unlike traditional function-call skills, Services are long-running components that maintain state, provide custom UIs, and communicate bidirectionally with the Agent.
 
 > **Relationship to OpenClaw**: ServiceClaw is a fork of [OpenClaw](https://github.com/openclaw/openclaw) that replaces the skill-centric model with a **service-centric architecture**. While OpenClaw focuses on short-lived tool invocations, ServiceClaw treats Services as first-class citizens — persistent, stateful, and interactive.
@@ -41,11 +45,18 @@ A **Service** in ServiceClaw is a long-running component that can:
 
 ## Quick Start
 
-### 1. Install ServiceClaw
+### 1. Install ServiceClaw (Local Build)
 
 ```bash
-npm install -g serviceclaw@latest
-# or: pnpm add -g serviceclaw@latest
+git clone https://github.com/serviceclaw/serviceclaw.git
+cd serviceclaw
+
+pnpm install
+pnpm build
+
+# The CLI is now available at ./dist/cli.js
+# You can link it globally or use ./dist/cli.js directly
+pnpm link --global
 ```
 
 ### 2. Start the Gateway

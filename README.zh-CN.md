@@ -41,11 +41,18 @@ ServiceClaw 中的**服务**是一个长期运行的组件，可以：
 
 ## 快速开始
 
-### 1. 安装 ServiceClaw
+### 1. 安装 ServiceClaw（本地构建）
 
 ```bash
-npm install -g serviceclaw@latest
-# 或：pnpm add -g serviceclaw@latest
+git clone https://github.com/serviceclaw/serviceclaw.git
+cd serviceclaw
+
+pnpm install
+pnpm build
+
+# CLI 现已可在 ./dist/cli.js 使用
+# 你可以全局链接或直接运行 ./dist/cli.js
+pnpm link --global
 ```
 
 ### 2. 启动网关
