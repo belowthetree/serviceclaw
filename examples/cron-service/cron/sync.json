@@ -1,0 +1,8 @@
+{
+  "name": "sync",
+  "schedule": "*/5 * * * *",
+  "command": "sync-data",
+  "enabled": true,
+  "timezone": "UTC",
+  "description": "Sync data every 5 minutes"
+}

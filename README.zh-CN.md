@@ -431,7 +431,7 @@ serviceclaw services logs hello-service --follow
 一个具有文件持久化的最小完整服务：
 
 ```
-services/helloworld/
+examples/helloworld/
 ├── manifest.json
 ├── script/
 │   └── entry.ts      # SCP 客户端 + 文件操作

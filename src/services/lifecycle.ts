@@ -23,7 +23,9 @@ import {
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { registerPluginHttpRoute, type PluginHttpRouteHandler } from "../plugins/http-registry.js";
 import type { PluginRegistry } from "../plugins/registry.js";
+import { discoverCronTasks } from "./cron-loader.js";
 import type {
+  CronTaskConfig,
   CronTrigger,
   MessageTrigger,
   ServiceConfig,
@@ -174,6 +176,9 @@ export interface ServiceRuntimeRefs {
   sessionKey?: string;
 
   cronTrigger?: ServiceCronTrigger;
+
+  /** Cron task job IDs map (taskName -> jobId) for multi-task cron services */
+  cronTaskJobIds?: Map<string, string>;
 }
 
 /**
@@ -290,6 +295,9 @@ export class Service {
   // Execution tracking
   private _executionStats: ServiceExecutionStats;
 
+  private _discoveredCronTasks: CronTaskConfig[] | undefined;
+  private _serviceDir: string | undefined;
+
   // Dependencies
   private readonly deps: ServiceLifecycleDeps;
 
@@ -298,6 +306,7 @@ export class Service {
     config: ServiceConfig,
     deps: ServiceLifecycleDeps,
     initialState: ServiceState = "pending",
+    serviceDir?: string,
   ) {
     this.id = manifest.id;
     this.manifest = manifest;
@@ -322,6 +331,8 @@ export class Service {
       successfulRuns: 0,
       failedRuns: 0,
     };
+
+    this._serviceDir = serviceDir;
 
     logger.info(`Service ${this.id} created in state: ${initialState}`);
   }
@@ -646,6 +657,8 @@ export class Service {
       this.setState("installing", "Starting installation");
       await this.prepareInstallation();
 
+      this._discoveredCronTasks = await discoverCronTasks(this._serviceDir ?? "");
+
       // Phase 3: Resource Creation
       const trigger = this.manifest.trigger;
 
@@ -731,22 +744,99 @@ export class Service {
       cronService: this.deps.cronService,
     });
 
-    const result = await trigger.create(this._runtimeRefs.agentId);
-    if (!result.success) {
-      throw new ServiceInstallError(
-        `Failed to create cron job: ${result.error}`,
-        this.id,
-        "create_resources",
-      );
-    }
-
-    this._runtimeRefs.cronJobIds.push(result.jobId!);
-    this._runtimeRefs.cronTrigger = trigger;
-
-    rollbackStack.push(async () => {
-      logger.debug(`Service ${this.id}: Rolling back cron trigger`);
-      await trigger.remove();
+    // Check for existing jobs to prevent duplicates
+    const existingJobs = await this.deps.cronService.listByService({
+      serviceId: this.id,
+      includeDisabled: true,
     });
+    const existingJobNames = new Set(existingJobs.map((job) => job.name));
+
+    // If we have discovered cron tasks, create multiple jobs
+    if (this._discoveredCronTasks && this._discoveredCronTasks.length > 0) {
+      // Filter out tasks that already have jobs
+      const newTasks = this._discoveredCronTasks.filter((task) => {
+        const jobName = `${this.id}:${task.name}`;
+        if (existingJobNames.has(jobName)) {
+          logger.debug(`Service ${this.id}: Skipping existing cron task "${task.name}"`);
+          return false;
+        }
+        return true;
+      });
+
+      if (newTasks.length > 0) {
+        const result = await trigger.createMultiple(newTasks, this._runtimeRefs.agentId);
+
+        // Store job IDs in the map
+        if (!this._runtimeRefs.cronTaskJobIds) {
+          this._runtimeRefs.cronTaskJobIds = new Map();
+        }
+
+        // We need to associate job IDs with task names
+        // Get the newly created jobs by listing again
+        const updatedJobs = await this.deps.cronService.listByService({
+          serviceId: this.id,
+          includeDisabled: true,
+        });
+
+        for (const task of newTasks) {
+          const jobName = `${this.id}:${task.name}`;
+          const job = updatedJobs.find((j) => j.name === jobName);
+          if (job) {
+            this._runtimeRefs.cronTaskJobIds.set(task.name, job.id);
+            this._runtimeRefs.cronJobIds.push(job.id);
+          }
+        }
+
+        if (result.errors.length > 0) {
+          const errorDetails = result.errors.map((e) => `${e.taskName}: ${e.error}`).join(", ");
+          logger.warn(`Service ${this.id}: Some cron tasks failed to create: ${errorDetails}`);
+
+          // If all tasks failed, throw an error
+          if (result.errors.length === newTasks.length) {
+            throw new ServiceInstallError(
+              `Failed to create cron tasks: ${errorDetails}`,
+              this.id,
+              "create_resources",
+            );
+          }
+        }
+      }
+
+      this._runtimeRefs.cronTrigger = trigger;
+
+      rollbackStack.push(async () => {
+        logger.debug(`Service ${this.id}: Rolling back cron tasks`);
+        await trigger.remove();
+      });
+    } else {
+      // Single trigger mode (backward compatibility)
+      // Check if job already exists
+      const singleJobName = this.manifest.name;
+      if (existingJobNames.has(singleJobName)) {
+        logger.debug(`Service ${this.id}: Cron job already exists, skipping creation`);
+        const existingJob = existingJobs.find((j) => j.name === singleJobName);
+        if (existingJob) {
+          this._runtimeRefs.cronJobIds.push(existingJob.id);
+        }
+      } else {
+        const result = await trigger.create(this._runtimeRefs.agentId);
+        if (!result.success) {
+          throw new ServiceInstallError(
+            `Failed to create cron job: ${result.error}`,
+            this.id,
+            "create_resources",
+          );
+        }
+        this._runtimeRefs.cronJobIds.push(result.jobId!);
+      }
+
+      this._runtimeRefs.cronTrigger = trigger;
+
+      rollbackStack.push(async () => {
+        logger.debug(`Service ${this.id}: Rolling back cron trigger`);
+        await trigger.remove();
+      });
+    }
   }
 
   /**
@@ -1159,9 +1249,18 @@ export class Service {
     createdAt: string;
     updatedAt: string;
     config: ServiceConfig;
-    runtimeRefs: Omit<ServiceRuntimeRefs, "webhookUnregisterFns" | "messageSubscriptions">;
+    runtimeRefs: Omit<
+      ServiceRuntimeRefs,
+      "webhookUnregisterFns" | "messageSubscriptions" | "cronTaskJobIds"
+    > & {
+      cronTaskJobIds?: Record<string, string>;
+    };
     executionStats: ServiceExecutionStats;
   } {
+    const cronTaskJobIdsObj = this._runtimeRefs.cronTaskJobIds
+      ? Object.fromEntries(this._runtimeRefs.cronTaskJobIds)
+      : undefined;
+
     return {
       id: this.id,
       manifest: this.manifest,
@@ -1175,6 +1274,7 @@ export class Service {
         webhookPaths: this._runtimeRefs.webhookPaths,
         agentId: this._runtimeRefs.agentId,
         sessionKey: this._runtimeRefs.sessionKey,
+        ...(cronTaskJobIdsObj && { cronTaskJobIds: cronTaskJobIdsObj }),
       },
       executionStats: this._executionStats,
     };
@@ -1203,8 +1303,12 @@ export class ServiceInstaller {
   /**
    * Install a service atomically with automatic rollback on failure
    */
-  async install(manifest: ServiceManifest, config: ServiceConfig): Promise<Service> {
-    const service = new Service(manifest, config, this.deps);
+  async install(
+    manifest: ServiceManifest,
+    config: ServiceConfig,
+    serviceDir?: string,
+  ): Promise<Service> {
+    const service = new Service(manifest, config, this.deps, "pending", serviceDir);
 
     try {
       // Phase 1: Validation

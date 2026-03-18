@@ -1,8 +1,20 @@
+/* eslint-disable @typescript-eslint/unbound-method */
 import { describe, expect, it, vi } from "vitest";
 import type { CronService } from "../../cron/service.js";
 import type { CronJob, CronJobCreate } from "../../cron/types.js";
-import type { CronTrigger, ServiceManifest } from "../schema.js";
+import type { CronTaskConfig, CronTrigger, ServiceManifest } from "../schema.js";
 import { ServiceCronTrigger, createServiceCronTrigger } from "./cron.js";
+
+// Type for task input (before schema parsing with defaults)
+type CronTaskInput = {
+  name: string;
+  schedule: string;
+  command: string;
+  enabled?: boolean;
+  timezone?: string;
+  description?: string;
+  options?: { waitForCompletion?: boolean; maxExecutions?: number | null };
+};
 
 function createMockCronService(): CronService {
   const jobs: CronJob[] = [];
@@ -149,6 +161,23 @@ describe("ServiceCronTrigger", () => {
       expect(vi.mocked(cronService).add).not.toHaveBeenCalled();
     });
 
+    it("should handle CronService.add errors", async () => {
+      const cronService = createMockCronService();
+      vi.mocked(cronService).add.mockRejectedValueOnce(new Error("Service unavailable"));
+
+      const manifest = createTestManifest("0 9 * * *");
+      const trigger = createServiceCronTrigger({
+        serviceId: "test-service",
+        manifest,
+        cronService,
+      });
+
+      const result = await trigger.create("test-agent");
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("Service unavailable");
+    });
+
     it("should support timezone configuration", async () => {
       const cronService = createMockCronService();
       const manifest = createTestManifest("0 9 * * *", "America/New_York");
@@ -250,6 +279,29 @@ describe("ServiceCronTrigger", () => {
 
       const result = trigger.validateSchedule("");
       expect(result.valid).toBe(false);
+    });
+
+    it("should reject special cron strings that don't have 5-6 fields", () => {
+      const trigger = createServiceCronTrigger({
+        serviceId: "test",
+        manifest: createTestManifest("@yearly"),
+        cronService: createMockCronService(),
+      });
+
+      // @yearly is a single field, so it fails the 5-6 field check
+      expect(trigger.validateSchedule("@yearly").valid).toBe(false);
+    });
+
+    it("should reject invalid special characters in cron fields", () => {
+      const trigger = createServiceCronTrigger({
+        serviceId: "test",
+        manifest: createTestManifest("* * * * *"),
+        cronService: createMockCronService(),
+      });
+
+      const result = trigger.validateSchedule("0 0 * * !");
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain("Invalid cron field");
     });
   });
 
@@ -435,5 +487,409 @@ describe("createServiceCronTrigger", () => {
     });
 
     expect(trigger).toBeInstanceOf(ServiceCronTrigger);
+  });
+});
+
+describe("ServiceCronTrigger createMultiple", () => {
+  function createTestManifestWithoutTrigger(): ServiceManifest {
+    return {
+      id: "test-service",
+      name: "Test Service",
+      description: "A test service for cron triggers",
+      version: "1.0.0",
+      execution: {
+        agentId: "test-agent",
+        sessionTarget: "isolated",
+      },
+      config: {},
+      requires: {},
+      capabilities: {
+        network: false,
+        filesystem: false,
+        shell: false,
+        browser: false,
+      },
+    };
+  }
+
+  it("should create multiple cron jobs for all tasks", async () => {
+    const cronService = createMockCronService();
+    const manifest = createTestManifestWithoutTrigger();
+    const trigger = createServiceCronTrigger({
+      serviceId: "test-service",
+      manifest,
+      cronService,
+    });
+
+    const tasks: CronTaskInput[] = [
+      { name: "cleanup", schedule: "0 2 * * *", command: "cleanup-data" },
+      { name: "sync", schedule: "0 */6 * * *", command: "sync-data" },
+      { name: "report", schedule: "0 9 * * 1", command: "generate-report" },
+    ];
+
+    const result = await trigger.createMultiple(tasks as CronTaskConfig[], "test-agent");
+
+    expect(result.success).toBe(true);
+    expect(result.jobIds).toHaveLength(3);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("should return success true for empty tasks array", async () => {
+    const cronService = createMockCronService();
+    const manifest = createTestManifestWithoutTrigger();
+    const trigger = createServiceCronTrigger({
+      serviceId: "test-service",
+      manifest,
+      cronService,
+    });
+
+    const result = await trigger.createMultiple([], "test-agent");
+
+    expect(result.success).toBe(true);
+    expect(result.jobIds).toHaveLength(0);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("should use {serviceId}:{taskName} format for job names", async () => {
+    const cronService = createMockCronService();
+    const manifest = createTestManifestWithoutTrigger();
+    const trigger = createServiceCronTrigger({
+      serviceId: "my-service",
+      manifest,
+      cronService,
+    });
+
+    const tasks: CronTaskInput[] = [{ name: "cleanup", schedule: "0 2 * * *", command: "cleanup" }];
+
+    await trigger.createMultiple(tasks as CronTaskConfig[], "test-agent");
+
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(vi.mocked(cronService).add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "my-service:cleanup",
+      }),
+    );
+  });
+
+  it("should include taskName in payload", async () => {
+    const cronService = createMockCronService();
+    const manifest = createTestManifestWithoutTrigger();
+    const trigger = createServiceCronTrigger({
+      serviceId: "test-service",
+      manifest,
+      cronService,
+    });
+
+    const tasks: CronTaskInput[] = [
+      { name: "cleanup", schedule: "0 2 * * *", command: "cleanup-data" },
+    ];
+
+    await trigger.createMultiple(tasks as CronTaskConfig[], "test-agent");
+
+    expect(vi.mocked(cronService).add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          taskName: "cleanup",
+        }),
+      }),
+    );
+  });
+
+  it("should include taskName in metadata", async () => {
+    const cronService = createMockCronService();
+    const manifest = createTestManifestWithoutTrigger();
+    const trigger = createServiceCronTrigger({
+      serviceId: "test-service",
+      manifest,
+      cronService,
+    });
+
+    const tasks: CronTaskInput[] = [
+      { name: "cleanup", schedule: "0 2 * * *", command: "cleanup-data" },
+    ];
+
+    await trigger.createMultiple(tasks as CronTaskConfig[], "test-agent");
+
+    expect(vi.mocked(cronService).add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          serviceId: "test-service",
+          managedBy: "service-registry",
+          triggerType: "cron",
+          taskName: "cleanup",
+        }),
+      }),
+    );
+  });
+
+  it("should handle tasks with all optional fields", async () => {
+    const cronService = createMockCronService();
+    const manifest = createTestManifestWithoutTrigger();
+    const trigger = createServiceCronTrigger({
+      serviceId: "test-service",
+      manifest,
+      cronService,
+    });
+
+    const tasks = [
+      {
+        name: "full-task",
+        schedule: "0 2 * * *",
+        command: "run-command",
+        enabled: false,
+        timezone: "Europe/London",
+        description: "A task with all fields set",
+        options: { waitForCompletion: true, maxExecutions: 100 },
+      },
+    ];
+
+    const result = await trigger.createMultiple(tasks, "test-agent");
+
+    expect(result.success).toBe(true);
+    expect(vi.mocked(cronService).add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        enabled: false,
+        description: "A task with all fields set",
+        schedule: expect.objectContaining({
+          tz: "Europe/London",
+        }),
+      }),
+    );
+  });
+
+  it("should skip tasks with invalid cron schedules and report errors", async () => {
+    const cronService = createMockCronService();
+    const manifest = createTestManifestWithoutTrigger();
+    const trigger = createServiceCronTrigger({
+      serviceId: "test-service",
+      manifest,
+      cronService,
+    });
+
+    const tasks: CronTaskInput[] = [
+      { name: "valid", schedule: "0 2 * * *", command: "valid-cmd" },
+      { name: "invalid", schedule: "not-a-cron", command: "invalid-cmd" },
+    ];
+
+    const result = await trigger.createMultiple(tasks as CronTaskConfig[], "test-agent");
+
+    expect(result.success).toBe(false);
+    expect(result.jobIds).toHaveLength(1);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toMatchObject({
+      taskName: "invalid",
+      error: expect.stringContaining("Invalid cron schedule"),
+    });
+  });
+
+  it("should skip tasks with invalid timezones and report errors", async () => {
+    const cronService = createMockCronService();
+    const manifest = createTestManifestWithoutTrigger();
+    const trigger = createServiceCronTrigger({
+      serviceId: "test-service",
+      manifest,
+      cronService,
+    });
+
+    const tasks: CronTaskInput[] = [
+      { name: "valid", schedule: "0 2 * * *", command: "valid-cmd", timezone: "UTC" },
+      {
+        name: "invalid",
+        schedule: "0 3 * * *",
+        command: "invalid-cmd",
+        timezone: "Invalid/Timezone",
+      },
+    ];
+
+    const result = await trigger.createMultiple(tasks as CronTaskConfig[], "test-agent");
+
+    expect(result.success).toBe(false);
+    expect(result.jobIds).toHaveLength(1);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toMatchObject({
+      taskName: "invalid",
+      error: expect.stringContaining("Invalid timezone"),
+    });
+  });
+
+  it("should handle auto timezone by leaving tz undefined", async () => {
+    const cronService = createMockCronService();
+    const manifest = createTestManifestWithoutTrigger();
+    const trigger = createServiceCronTrigger({
+      serviceId: "test-service",
+      manifest,
+      cronService,
+    });
+
+    const tasks: CronTaskInput[] = [
+      { name: "auto-tz", schedule: "0 2 * * *", command: "cmd", timezone: "auto" },
+    ];
+
+    await trigger.createMultiple(tasks as CronTaskConfig[], "test-agent");
+
+    expect(vi.mocked(cronService).add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        schedule: expect.objectContaining({
+          tz: undefined,
+        }),
+      }),
+    );
+  });
+
+  it("should handle undefined timezone by leaving tz undefined", async () => {
+    const cronService = createMockCronService();
+    const manifest = createTestManifestWithoutTrigger();
+    const trigger = createServiceCronTrigger({
+      serviceId: "test-service",
+      manifest,
+      cronService,
+    });
+
+    const tasks: CronTaskInput[] = [{ name: "no-tz", schedule: "0 2 * * *", command: "cmd" }];
+
+    await trigger.createMultiple(tasks as CronTaskConfig[], "test-agent");
+
+    expect(vi.mocked(cronService).add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        schedule: expect.objectContaining({
+          tz: undefined,
+        }),
+      }),
+    );
+  });
+
+  it("should default enabled to true when not specified", async () => {
+    const cronService = createMockCronService();
+    const manifest = createTestManifestWithoutTrigger();
+    const trigger = createServiceCronTrigger({
+      serviceId: "test-service",
+      manifest,
+      cronService,
+    });
+
+    const tasks: CronTaskInput[] = [
+      { name: "default-enabled", schedule: "0 2 * * *", command: "cmd" },
+    ];
+
+    await trigger.createMultiple(tasks as CronTaskConfig[], "test-agent");
+
+    expect(vi.mocked(cronService).add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        enabled: true,
+      }),
+    );
+  });
+
+  it("should handle CronService.add errors gracefully", async () => {
+    const cronService = createMockCronService();
+    vi.mocked(cronService).add.mockRejectedValueOnce(new Error("Database error"));
+
+    const manifest = createTestManifestWithoutTrigger();
+    const trigger = createServiceCronTrigger({
+      serviceId: "test-service",
+      manifest,
+      cronService,
+    });
+
+    const tasks: CronTaskInput[] = [{ name: "failing", schedule: "0 2 * * *", command: "cmd" }];
+
+    const result = await trigger.createMultiple(tasks as CronTaskConfig[], "test-agent");
+
+    expect(result.success).toBe(false);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toMatchObject({
+      taskName: "failing",
+      error: "Database error",
+    });
+  });
+
+  it("should include service name in payload message", async () => {
+    const cronService = createMockCronService();
+    const manifest = createTestManifestWithoutTrigger();
+    const trigger = createServiceCronTrigger({
+      serviceId: "test-service",
+      manifest,
+      cronService,
+    });
+
+    const tasks: CronTaskInput[] = [
+      { name: "cleanup", schedule: "0 2 * * *", command: "cleanup-data" },
+    ];
+
+    await trigger.createMultiple(tasks as CronTaskConfig[], "test-agent");
+
+    expect(vi.mocked(cronService).add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          message: "[Service Trigger] Test Service - cleanup",
+        }),
+      }),
+    );
+  });
+
+  it("should use sessionTarget from manifest", async () => {
+    const cronService = createMockCronService();
+    const manifest: ServiceManifest = {
+      ...createTestManifestWithoutTrigger(),
+      execution: { agentId: "test-agent", sessionTarget: "main" },
+    };
+    const trigger = createServiceCronTrigger({
+      serviceId: "test-service",
+      manifest,
+      cronService,
+    });
+
+    const tasks: CronTaskInput[] = [
+      { name: "main-session", schedule: "0 2 * * *", command: "cmd" },
+    ];
+
+    await trigger.createMultiple(tasks as CronTaskConfig[], "test-agent");
+
+    expect(vi.mocked(cronService).add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionTarget: "main",
+      }),
+    );
+  });
+
+  it("should default to isolated session target", async () => {
+    const cronService = createMockCronService();
+    const manifest = createTestManifestWithoutTrigger();
+    delete (manifest as { execution?: { sessionTarget?: string } }).execution?.sessionTarget;
+
+    const trigger = createServiceCronTrigger({
+      serviceId: "test-service",
+      manifest,
+      cronService,
+    });
+
+    const tasks: CronTaskInput[] = [
+      { name: "isolated-session", schedule: "0 2 * * *", command: "cmd" },
+    ];
+
+    await trigger.createMultiple(tasks as CronTaskConfig[], "test-agent");
+
+    expect(vi.mocked(cronService).add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionTarget: "isolated",
+      }),
+    );
+  });
+
+  it("should handle tasks without description (no description field in job)", async () => {
+    const cronService = createMockCronService();
+    const manifest = createTestManifestWithoutTrigger();
+    const trigger = createServiceCronTrigger({
+      serviceId: "test-service",
+      manifest,
+      cronService,
+    });
+
+    const tasks: CronTaskInput[] = [{ name: "no-desc", schedule: "0 2 * * *", command: "cmd" }];
+
+    await trigger.createMultiple(tasks as CronTaskConfig[], "test-agent");
+
+    const call = vi.mocked(cronService).add.mock.calls[0][0] as { description?: string };
+    expect(call.description).toBeUndefined();
   });
 });

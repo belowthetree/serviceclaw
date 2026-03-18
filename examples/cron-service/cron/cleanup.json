@@ -1,0 +1,8 @@
+{
+  "name": "cleanup",
+  "schedule": "0 2 * * *",
+  "command": "cleanup-temp-files",
+  "enabled": true,
+  "timezone": "UTC",
+  "description": "Clean up temporary files daily at 2 AM"
+}

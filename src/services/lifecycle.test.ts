@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/unbound-method */
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import type { CronService } from "../cron/service.js";
 import { clearInternalHooks } from "../hooks/internal-hooks.js";
@@ -47,6 +48,7 @@ const mockCronService = (): CronService =>
     enableByService: vi.fn().mockResolvedValue({ success: true, count: 1 }),
     disableByService: vi.fn().mockResolvedValue({ success: true, count: 1 }),
     removeByService: vi.fn().mockResolvedValue({ success: true, count: 1 }),
+    listByService: vi.fn().mockResolvedValue([]),
   }) as unknown as CronService;
 
 const mockPluginRegistry = (): PluginRegistry =>
@@ -958,7 +960,7 @@ describe("ServiceLifecycleManager", () => {
   describe("startService", () => {
     it("should start a service and return instance", async () => {
       const mockRun = createMockManagedRun(12345);
-      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+      vi.mocked(mockSupervisor).spawn.mockResolvedValue(mockRun);
 
       const instance = await manager.startService("test-service");
 
@@ -971,7 +973,7 @@ describe("ServiceLifecycleManager", () => {
 
     it("should throw if service is already started", async () => {
       const mockRun = createMockManagedRun(12345);
-      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+      vi.mocked(mockSupervisor).spawn.mockResolvedValue(mockRun);
 
       await manager.startService("test-service");
 
@@ -980,7 +982,7 @@ describe("ServiceLifecycleManager", () => {
 
     it("should throw if service is already started", async () => {
       const mockRun = createMockManagedRun(12345);
-      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+      vi.mocked(mockSupervisor).spawn.mockResolvedValue(mockRun);
 
       await manager.startService("test-service");
 
@@ -989,11 +991,11 @@ describe("ServiceLifecycleManager", () => {
 
     it("should call ProcessSupervisor.spawn with correct arguments", async () => {
       const mockRun = createMockManagedRun(12345);
-      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+      vi.mocked(mockSupervisor).spawn.mockResolvedValue(mockRun);
 
       await manager.startService("test-service");
 
-      expect(mockSupervisor.spawn).toHaveBeenCalledWith(
+      expect(vi.mocked(mockSupervisor).spawn).toHaveBeenCalledWith(
         expect.objectContaining({
           mode: "child",
           argv: expect.arrayContaining(["node"]),
@@ -1015,7 +1017,7 @@ describe("ServiceLifecycleManager", () => {
         },
       });
 
-      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+      vi.mocked(mockSupervisor).spawn.mockResolvedValue(mockRun);
 
       await manager.startService("test-service");
 
@@ -1024,7 +1026,7 @@ describe("ServiceLifecycleManager", () => {
     });
 
     it("should transition to error state on spawn failure", async () => {
-      vi.mocked(mockSupervisor.spawn).mockRejectedValue(new Error("Spawn failed"));
+      vi.mocked(mockSupervisor).spawn.mockRejectedValue(new Error("Spawn failed"));
 
       await expect(manager.startService("test-service")).rejects.toThrow(ServiceLifecycleError);
 
@@ -1037,7 +1039,7 @@ describe("ServiceLifecycleManager", () => {
   describe("stopService", () => {
     it("should stop a running service", async () => {
       const mockRun = createMockManagedRun(12345);
-      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+      vi.mocked(mockSupervisor).spawn.mockResolvedValue(mockRun);
 
       await manager.startService("test-service");
       await manager.stopService("test-service");
@@ -1065,7 +1067,7 @@ describe("ServiceLifecycleManager", () => {
         },
       });
 
-      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+      vi.mocked(mockSupervisor).spawn.mockResolvedValue(mockRun);
 
       await manager.startService("test-service");
       await manager.stopService("test-service");
@@ -1082,7 +1084,7 @@ describe("ServiceLifecycleManager", () => {
 
     it("should return instance for running service", async () => {
       const mockRun = createMockManagedRun(12345);
-      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+      vi.mocked(mockSupervisor).spawn.mockResolvedValue(mockRun);
 
       await manager.startService("test-service");
 
@@ -1102,8 +1104,8 @@ describe("ServiceLifecycleManager", () => {
       const mockRun1 = createMockManagedRun(12345);
       const mockRun2 = createMockManagedRun(12346);
 
-      vi.mocked(mockSupervisor.spawn)
-        .mockResolvedValueOnce(mockRun1)
+      vi.mocked(mockSupervisor)
+        .spawn.mockResolvedValueOnce(mockRun1)
         .mockResolvedValueOnce(mockRun2);
 
       await manager.startService("service-1");
@@ -1117,7 +1119,7 @@ describe("ServiceLifecycleManager", () => {
 
     it("should not include stopped services", async () => {
       const mockRun = createMockManagedRun(12345);
-      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+      vi.mocked(mockSupervisor).spawn.mockResolvedValue(mockRun);
 
       await manager.startService("test-service");
       await manager.stopService("test-service");
@@ -1129,7 +1131,7 @@ describe("ServiceLifecycleManager", () => {
   describe("listAllServices", () => {
     it("should return all services including stopped", async () => {
       const mockRun = createMockManagedRun(12345);
-      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+      vi.mocked(mockSupervisor).spawn.mockResolvedValue(mockRun);
 
       await manager.startService("test-service");
       await manager.stopService("test-service");
@@ -1147,7 +1149,7 @@ describe("ServiceLifecycleManager", () => {
 
     it("should return true for started service", async () => {
       const mockRun = createMockManagedRun(12345);
-      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+      vi.mocked(mockSupervisor).spawn.mockResolvedValue(mockRun);
 
       await manager.startService("test-service");
 
@@ -1156,7 +1158,7 @@ describe("ServiceLifecycleManager", () => {
 
     it("should return false for stopped service", async () => {
       const mockRun = createMockManagedRun(12345);
-      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+      vi.mocked(mockSupervisor).spawn.mockResolvedValue(mockRun);
 
       await manager.startService("test-service");
       await manager.stopService("test-service");
@@ -1184,7 +1186,7 @@ describe("ServiceLifecycleManager", () => {
       const mockRun = createMockManagedRun(12345);
 
       manager.registerLifecycleHooks({ onStart });
-      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+      vi.mocked(mockSupervisor).spawn.mockResolvedValue(mockRun);
 
       await manager.startService("test-service");
 
@@ -1202,7 +1204,7 @@ describe("ServiceLifecycleManager", () => {
       const mockRun = createMockManagedRun(12345);
 
       manager.registerLifecycleHooks({ onStop });
-      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+      vi.mocked(mockSupervisor).spawn.mockResolvedValue(mockRun);
 
       await manager.startService("test-service");
       await manager.stopService("test-service");
@@ -1221,7 +1223,7 @@ describe("ServiceLifecycleManager", () => {
       const mockRun = createMockManagedRun(12345);
 
       manager.registerLifecycleHooks({ onStateChange });
-      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+      vi.mocked(mockSupervisor).spawn.mockResolvedValue(mockRun);
 
       await manager.startService("test-service");
 
@@ -1243,7 +1245,7 @@ describe("ServiceLifecycleManager", () => {
       const onStdout = vi.fn();
       let capturedStdout: ((chunk: string) => void) | undefined;
 
-      vi.mocked(mockSupervisor.spawn).mockImplementation(async (input) => {
+      vi.mocked(mockSupervisor).spawn.mockImplementation(async (input) => {
         capturedStdout = input.onStdout;
         return createMockManagedRun(12345);
       });
@@ -1260,7 +1262,7 @@ describe("ServiceLifecycleManager", () => {
       const onStderr = vi.fn();
       let capturedStderr: ((chunk: string) => void) | undefined;
 
-      vi.mocked(mockSupervisor.spawn).mockImplementation(async (input) => {
+      vi.mocked(mockSupervisor).spawn.mockImplementation(async (input) => {
         capturedStderr = input.onStderr;
         return createMockManagedRun(12345);
       });
@@ -1279,8 +1281,8 @@ describe("ServiceLifecycleManager", () => {
       const mockRun1 = createMockManagedRun(12345);
       const mockRun2 = createMockManagedRun(12346);
 
-      vi.mocked(mockSupervisor.spawn)
-        .mockResolvedValueOnce(mockRun1)
+      vi.mocked(mockSupervisor)
+        .spawn.mockResolvedValueOnce(mockRun1)
         .mockResolvedValueOnce(mockRun2);
 
       await manager.startService("service-1");
@@ -1297,7 +1299,7 @@ describe("ServiceLifecycleManager", () => {
         throw new Error("Cancel failed");
       });
 
-      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+      vi.mocked(mockSupervisor).spawn.mockResolvedValue(mockRun);
 
       await manager.startService("test-service");
 
@@ -1309,7 +1311,7 @@ describe("ServiceLifecycleManager", () => {
   describe("cleanupStoppedServices", () => {
     it("should remove stopped services from memory", async () => {
       const mockRun = createMockManagedRun(12345);
-      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+      vi.mocked(mockSupervisor).spawn.mockResolvedValue(mockRun);
 
       await manager.startService("test-service");
       await manager.stopService("test-service");
@@ -1323,7 +1325,7 @@ describe("ServiceLifecycleManager", () => {
 
     it("should not remove running services", async () => {
       const mockRun = createMockManagedRun(12345);
-      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+      vi.mocked(mockSupervisor).spawn.mockResolvedValue(mockRun);
 
       await manager.startService("test-service");
       manager.cleanupStoppedServices();
@@ -1335,7 +1337,7 @@ describe("ServiceLifecycleManager", () => {
   describe("dispose", () => {
     it("should stop all services and clear state", async () => {
       const mockRun = createMockManagedRun(12345);
-      vi.mocked(mockSupervisor.spawn).mockResolvedValue(mockRun);
+      vi.mocked(mockSupervisor).spawn.mockResolvedValue(mockRun);
 
       await manager.startService("test-service");
       await manager.dispose();

@@ -97,6 +97,8 @@ type CronAgentTurnPayloadFields = {
   channel?: CronMessageChannel;
   to?: string;
   bestEffortDeliver?: boolean;
+  /** Optional task identifier for multi-task cron jobs. */
+  taskName?: string;
 };
 
 type CronAgentTurnPayload = {

@@ -1,8 +1,7 @@
 {
-  "active_plan": "/home/zgg/project/serviceclaw/.sisyphus/plans/gateway-service-api-proxy.md",
-  "started_at": "2026-03-15T13:10:00.000Z",
-  "session_ids": ["ses_30f7fd7f4ffe9gNHIGdQuvdKpD", "ses_30eb3cb33ffe1aZ1AxgRzYczzl"],
-  "plan_name": "gateway-service-api-proxy",
-  "agent": "atlas",
-  "worktree_path": "/home/zgg/project/serviceclaw"
+  "active_plan": "/home/zgg/project/serviceclaw/.sisyphus/plans/service-cron-tasks.md",
+  "started_at": "2026-03-17T17:00:34.555Z",
+  "session_ids": ["ses_30355cff3ffebHkPbQelEPgPD5", "ses_30355cff3ffebHkPbQelEPgPD5"],
+  "plan_name": "service-cron-tasks",
+  "agent": "atlas"
 }

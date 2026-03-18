@@ -435,7 +435,7 @@ serviceclaw services logs hello-service --follow
 A minimal complete service with file persistence:
 
 ```
-services/helloworld/
+examples/helloworld/
 ├── manifest.json
 ├── script/
 │   └── entry.ts      # SCP client + file operations

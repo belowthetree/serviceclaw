@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cron Service</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #1a1a2e;
+      color: #e4e4e7;
+      margin: 0;
+      padding: 20px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      color: #10b981;
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      color: #a1a1aa;
+      margin-bottom: 2rem;
+    }
+
+    .status-card {
+      background: #27273a;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      border: 1px solid #374151;
+    }
+
+    .status-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      background: #10b981;
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    .status-dot.disconnected {
+      background: #ef4444;
+      animation: none;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .status-title {
+      font-weight: 600;
+      color: #e4e4e7;
+    }
+
+    .status-value {
+      color: #a1a1aa;
+      font-size: 0.875rem;
+    }
+
+    .task-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .task-item {
+      background: #1f2937;
+      border-radius: 8px;
+      padding: 16px;
+      border: 1px solid #374151;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .task-item.running {
+      border-color: #10b981;
+      background: #1f2937;
+    }
+
+    .task-info h3 {
+      margin: 0 0 4px 0;
+      color: #e4e4e7;
+      font-size: 1rem;
+    }
+
+    .task-info p {
+      margin: 0;
+      color: #6b7280;
+      font-size: 0.875rem;
+    }
+
+    .task-meta {
+      text-align: right;
+    }
+
+    .task-schedule {
+      background: #374151;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 0.875rem;
+      color: #10b981;
+      display: inline-block;
+      margin-bottom: 4px;
+    }
+
+    .task-executions {
+      font-size: 0.75rem;
+      color: #6b7280;
+    }
+
+    .task-last-run {
+      font-size: 0.75rem;
+      color: #a1a1aa;
+    }
+
+    .logs-section {
+      margin-top: 20px;
+    }
+
+    .logs-header {
+      font-weight: 600;
+      margin-bottom: 10px;
+      color: #e4e4e7;
+    }
+
+    .logs-container {
+      background: #0f0f1a;
+      border-radius: 8px;
+      padding: 16px;
+      font-family: monospace;
+      font-size: 0.875rem;
+      color: #a1a1aa;
+      max-height: 300px;
+      overflow-y: auto;
+      border: 1px solid #374151;
+    }
+
+    .log-entry {
+      margin-bottom: 8px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #27273a;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .log-entry:last-child {
+      margin-bottom: 0;
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+
+    .log-time {
+      color: #6b7280;
+      white-space: nowrap;
+    }
+
+    .log-task {
+      color: #10b981;
+      white-space: nowrap;
+    }
+
+    .log-task.started {
+      color: #f59e0b;
+    }
+
+    .log-task.completed {
+      color: #10b981;
+    }
+
+    .log-task.failed {
+      color: #ef4444;
+    }
+
+    .log-message {
+      color: #e4e4e7;
+      flex: 1;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .stat-item {
+      background: #1f2937;
+      padding: 12px;
+      border-radius: 8px;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: #10b981;
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      color: #6b7280;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>Cron Service</h1>
+    <p class="subtitle">Scheduled task management demonstration</p>
+
+    <div class="status-card">
+      <div class="status-header">
+        <div class="status-dot" id="statusDot"></div>
+        <span class="status-title" id="statusTitle">Service Status: Connecting...</span>
+      </div>
+      <div class="status-value" id="statusDetails">Waiting for service connection</div>
+    </div>
+
+    <div class="status-card">
+      <div class="status-header">
+        <span class="status-title">Configured Tasks</span>
+      </div>
+      <div class="task-list" id="taskList">
+        <div class="task-item" data-task="cleanup">
+          <div class="task-info">
+            <h3>cleanup</h3>
+            <p>Clean up temporary files daily at 2 AM</p>
+          </div>
+          <div class="task-meta">
+            <span class="task-schedule">0 2 * * *</span>
+            <div class="task-executions" id="cleanupExecutions">0 executions</div>
+            <div class="task-last-run" id="cleanupLastRun">Never</div>
+          </div>
+        </div>
+        <div class="task-item" data-task="sync">
+          <div class="task-info">
+            <h3>sync</h3>
+            <p>Sync data every 5 minutes</p>
+          </div>
+          <div class="task-meta">
+            <span class="task-schedule">*/5 * * * *</span>
+            <div class="task-executions" id="syncExecutions">0 executions</div>
+            <div class="task-last-run" id="syncLastRun">Never</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="status-card">
+      <div class="status-header">
+        <span class="status-title">Execution Statistics</span>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-item">
+          <div class="stat-value" id="totalExecutions">0</div>
+          <div class="stat-label">Total Executions</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="successfulExecutions">0</div>
+          <div class="stat-label">Successful</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="failedExecutions">0</div>
+          <div class="stat-label">Failed</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="logs-section">
+      <div class="logs-header">Recent Activity</div>
+      <div class="logs-container" id="logs">
+        <div class="log-entry">
+          <span class="log-time">[--:--:--]</span>
+          <span class="log-message">Waiting for service connection...</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const logsContainer = document.getElementById('logs');
+    const statusDot = document.getElementById('statusDot');
+    const statusTitle = document.getElementById('statusTitle');
+    const statusDetails = document.getElementById('statusDetails');
+    const taskList = document.getElementById('taskList');
+    
+    let isConnected = false;
+    const taskStats = {
+      cleanup: { executions: 0, lastRun: null },
+      sync: { executions: 0, lastRun: null }
+    };
+    let totalExecutions = 0;
+    let successfulExecutions = 0;
+    let failedExecutions = 0;
+
+    function formatTime(date) {
+      return date.toLocaleTimeString('en-US', { hour12: false });
+    }
+
+    function updateStatus(connected, message) {
+      isConnected = connected;
+      if (connected) {
+        statusDot.classList.remove('disconnected');
+        statusTitle.textContent = 'Service Status: Connected';
+        statusDetails.textContent = message || 'Service is ready to receive cron tasks';
+      } else {
+        statusDot.classList.add('disconnected');
+        statusTitle.textContent = 'Service Status: Disconnected';
+        statusDetails.textContent = message || 'Waiting for service connection...';
+      }
+    }
+
+    function addLogEntry(timestamp, taskName, message, status = 'info') {
+      const time = timestamp ? new Date(timestamp).toLocaleTimeString('en-US', { hour12: false }) : formatTime(new Date());
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      
+      const taskClass = status === 'started' ? 'started' : status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : '';
+      
+      entry.innerHTML = `
+        <span class="log-time">[${time}]</span>
+        <span class="log-task ${taskClass}">[${taskName}]</span>
+        <span class="log-message">${message}</span>
+      `;
+      
+      logsContainer.insertBefore(entry, logsContainer.firstChild);
+
+      while (logsContainer.children.length > 50) {
+        logsContainer.removeChild(logsContainer.lastChild);
+      }
+    }
+
+    function updateTaskStats(taskName, stats) {
+      if (!taskStats[taskName]) return;
+      
+      taskStats[taskName].executions = stats.executions || 0;
+      taskStats[taskName].lastRun = stats.lastRun;
+      
+      const executionsEl = document.getElementById(`${taskName}Executions`);
+      const lastRunEl = document.getElementById(`${taskName}LastRun`);
+      
+      if (executionsEl) {
+        executionsEl.textContent = `${taskStats[taskName].executions} execution${taskStats[taskName].executions !== 1 ? 's' : ''}`;
+      }
+      if (lastRunEl && stats.lastRun) {
+        lastRunEl.textContent = new Date(stats.lastRun).toLocaleString();
+      }
+    }
+
+    function updateGlobalStats() {
+      document.getElementById('totalExecutions').textContent = totalExecutions;
+      document.getElementById('successfulExecutions').textContent = successfulExecutions;
+      document.getElementById('failedExecutions').textContent = failedExecutions;
+    }
+
+    function highlightTask(taskName, running) {
+      const taskEl = document.querySelector(`[data-task="${taskName}"]`);
+      if (taskEl) {
+        if (running) {
+          taskEl.classList.add('running');
+        } else {
+          taskEl.classList.remove('running');
+        }
+      }
+    }
+
+    window.addEventListener('message', (event) => {
+      const { data } = event;
+      
+      if (!data || typeof data !== 'object') return;
+      
+      const { event: eventType, payload } = data;
+      
+      switch (eventType) {
+        case 'service.ready':
+          updateStatus(true, payload?.message || 'Service connected');
+          addLogEntry(payload?.timestamp, 'system', 'Service connected and ready', 'completed');
+          break;
+          
+        case 'task.started':
+          highlightTask(payload?.taskName, true);
+          addLogEntry(payload?.timestamp, payload?.taskName, 'Task execution started', 'started');
+          break;
+          
+        case 'task.completed':
+          highlightTask(payload?.taskName, false);
+          totalExecutions++;
+          successfulExecutions++;
+          updateTaskStats(payload?.taskName, payload?.stats);
+          updateGlobalStats();
+          addLogEntry(payload?.timestamp, payload?.taskName, 'Task completed successfully', 'completed');
+          break;
+          
+        case 'task.failed':
+          highlightTask(payload?.taskName, false);
+          totalExecutions++;
+          failedExecutions++;
+          updateTaskStats(payload?.taskName, { executions: taskStats[payload?.taskName]?.executions || 0, lastRun: payload?.timestamp });
+          updateGlobalStats();
+          addLogEntry(payload?.timestamp, payload?.taskName, `Failed: ${payload?.error || 'Unknown error'}`, 'failed');
+          break;
+          
+        case 'task.unknown':
+          addLogEntry(payload?.timestamp, payload?.taskName || 'unknown', `Unknown task command: ${payload?.command}`, 'failed');
+          break;
+          
+        case 'ui.response':
+          if (payload?.type === 'logs' && payload?.logs) {
+            payload.logs.reverse().forEach(log => {
+              addLogEntry(log.timestamp, log.taskName, log.message, log.status);
+            });
+          } else if (payload?.type === 'stats' && payload?.stats) {
+            Object.entries(payload.stats).forEach(([taskName, stats]) => {
+              updateTaskStats(taskName, stats);
+            });
+          }
+          break;
+      }
+    });
+
+    window.parent.postMessage({
+      source: 'cron-service-ui',
+      type: 'getStats',
+      messageId: `init-${Date.now()}`,
+      payload: {}
+    }, '*');
+
+    window.parent.postMessage({
+      source: 'cron-service-ui',
+      type: 'getLogs',
+      messageId: `init-logs-${Date.now()}`,
+      payload: { limit: 20 }
+    }, '*');
+
+    setTimeout(() => {
+      if (!isConnected) {
+        updateStatus(false, 'Service connection timeout - check if service is running');
+        addLogEntry(null, 'system', 'Connection timeout - service may not be running', 'failed');
+      }
+    }, 5000);
+  </script>
+</body>
+
+</html>

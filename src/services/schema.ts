@@ -115,6 +115,32 @@ export const ConfigFieldSchema = z.object({
 
 export const ServiceConfigSchema = z.record(z.string(), ConfigFieldSchema);
 
+// Cron Task Configuration Schema
+
+export const CronTaskConfigSchema = z.object({
+  /** Unique task name (e.g., "cleanup") */
+  name: z.string().min(1, "Task name cannot be empty"),
+  /** Cron expression (e.g., "0 2 * * *") */
+  schedule: z.string().min(1, "Schedule cannot be empty"),
+  /** Command/action to execute */
+  command: z.string().min(1, "Command cannot be empty"),
+  /** Whether task is active (default: true) */
+  enabled: z.boolean().optional().default(true),
+  /** IANA timezone identifier (default: "UTC") */
+  timezone: z.string().optional().default("UTC"),
+  /** Human-readable description */
+  description: z.string().optional(),
+  /** Task execution options */
+  options: z
+    .object({
+      /** Wait for task completion before next execution */
+      waitForCompletion: z.boolean().optional(),
+      /** Maximum number of executions (null for unlimited) */
+      maxExecutions: z.number().int().positive().nullable().optional(),
+    })
+    .optional(),
+});
+
 // Capabilities Schema (supports both array and object formats)
 
 export const ServiceCapabilitiesObjectSchema = z.object({
@@ -168,6 +194,8 @@ export const ServiceManifestSchema = z.object({
   requires: ServiceRequirementsSchema.optional(),
 
   config: z.record(z.string(), ConfigFieldSchema).optional(),
+
+  cronTasks: z.array(CronTaskConfigSchema).optional(),
 });
 
 // Type Exports
@@ -190,6 +218,7 @@ export type ServiceRequirements = z.infer<typeof ServiceRequirementsSchema>;
 export type ConfigField = z.infer<typeof ConfigFieldSchema>;
 
 export type ServiceType = "traditional" | "declarative";
+export type CronTaskConfig = z.infer<typeof CronTaskConfigSchema>;
 
 export interface ServiceCapabilities {
   network?: boolean;

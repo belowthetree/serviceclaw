@@ -1,0 +1,16 @@
+{
+  "id": "cron-service",
+  "name": "Cron Service",
+  "description": "A demonstration service showing multiple scheduled cron tasks",
+  "version": "1.0.0",
+  "entry": "script/entry.ts",
+  "ui": {
+    "entry": "ui/index.html"
+  },
+  "capabilities": {
+    "network": true,
+    "filesystem": true,
+    "cron": true
+  },
+  "category": "custom"
+}

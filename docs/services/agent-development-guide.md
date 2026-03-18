@@ -11,9 +11,10 @@
 5. [SCP Protocol Communication](#scp-protocol-communication)
 6. [UI Integration](#ui-integration)
 7. [Service API Proxy](#service-api-proxy)
-8. [Agent Integration](#agent-integration)
-9. [Best Practices](#best-practices)
-10. [Troubleshooting](#troubleshooting)
+8. [Cron Tasks](#cron-tasks)
+9. [Agent Integration](#agent-integration)
+10. [Best Practices](#best-practices)
+11. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -1687,6 +1688,397 @@ main().catch(console.error);
   </body>
 </html>
 ```
+
+---
+
+## Cron Tasks
+
+Services can define multiple scheduled tasks using JSON configuration files placed in a `cron/` directory. This allows a single service to have several independent cron jobs with different schedules and behaviors.
+
+### Overview
+
+While the `manifest.json` trigger field supports a single cron schedule, the `cron/` directory enables multiple scheduled tasks per service. Each task is defined in its own JSON file and is automatically discovered and installed when the service is installed.
+
+**Key differences from single trigger:**
+
+| Feature             | Single Trigger (manifest.json) | Multiple Tasks (cron/)       |
+| ------------------- | ------------------------------ | ---------------------------- |
+| Number of schedules | One                            | Unlimited                    |
+| Configuration       | Inline in manifest             | Separate JSON files          |
+| Task identification | Service-level                  | Task-level with names        |
+| Use case            | Simple periodic execution      | Complex multi-task workflows |
+
+**Common use cases:**
+
+- **Data sync**: Multiple sync operations at different intervals (hourly, daily, weekly)
+- **Cleanup tasks**: Separate schedules for temp files, logs, and cache cleanup
+- **Monitoring**: Different checks running at different frequencies
+- **Batch processing**: Multiple data pipelines on independent schedules
+
+### Configuration Format
+
+Each cron task is defined in a JSON file within the `cron/` directory:
+
+```json
+{
+  "name": "cleanup",
+  "schedule": "0 2 * * *",
+  "command": "cleanup-temp-files",
+  "enabled": true,
+  "timezone": "UTC",
+  "description": "Clean up temporary files daily at 2 AM",
+  "options": {
+    "waitForCompletion": true
+  }
+}
+```
+
+**Field Reference:**
+
+| Field         | Type    | Required | Description                                              |
+| ------------- | ------- | -------- | -------------------------------------------------------- |
+| `name`        | string  | Yes      | Unique task identifier (e.g., "cleanup", "sync")         |
+| `schedule`    | string  | Yes      | Cron expression (e.g., "0 2 \* \* \*" for daily at 2 AM) |
+| `command`     | string  | Yes      | Command/action name passed to the service handler        |
+| `enabled`     | boolean | No       | Whether the task is active (default: true)               |
+| `timezone`    | string  | No       | IANA timezone identifier (default: "UTC")                |
+| `description` | string  | No       | Human-readable description of the task                   |
+| `options`     | object  | No       | Task execution options (see below)                       |
+
+**Options object:**
+
+| Option              | Type    | Description                                                       |
+| ------------------- | ------- | ----------------------------------------------------------------- |
+| `waitForCompletion` | boolean | Wait for current execution to finish before next (default: false) |
+| `maxExecutions`     | number  | Maximum number of executions (null for unlimited)                 |
+
+### Example Configurations
+
+**Daily cleanup task:**
+
+```json
+{
+  "name": "cleanup",
+  "schedule": "0 2 * * *",
+  "command": "cleanup-temp-files",
+  "enabled": true,
+  "timezone": "UTC",
+  "description": "Clean up temporary files daily at 2 AM"
+}
+```
+
+**Frequent data sync:**
+
+```json
+{
+  "name": "sync",
+  "schedule": "*/5 * * * *",
+  "command": "sync-data",
+  "enabled": true,
+  "timezone": "America/New_York",
+  "description": "Sync data every 5 minutes"
+}
+```
+
+**Weekly report generation:**
+
+```json
+{
+  "name": "weekly-report",
+  "schedule": "0 9 * * 1",
+  "command": "generate-report",
+  "enabled": true,
+  "timezone": "UTC",
+  "description": "Generate weekly report every Monday at 9 AM",
+  "options": {
+    "waitForCompletion": true
+  }
+}
+```
+
+### Directory Structure
+
+```
+services/my-service/
+├── manifest.json
+├── cron/
+│   ├── cleanup.json      # Daily cleanup task
+│   ├── sync.json         # Frequent sync task
+│   └── report.json       # Weekly report task
+└── script/
+    └── entry.ts
+```
+
+### Auto-Installation Behavior
+
+Cron tasks are automatically managed during the service lifecycle:
+
+**Installation phase:**
+
+1. When you run `serviceclaw service install my-service`, the system scans the `cron/` directory
+2. Each valid JSON file is parsed and validated
+3. Cron jobs are created for each task with the naming pattern `{serviceId}:{taskName}`
+4. Job IDs are stored in the service runtime references
+5. Malformed JSON files are skipped with warning logs (installation continues)
+
+**Enable phase:**
+
+1. When you run `serviceclaw service enable my-service`, all cron tasks are activated
+2. The jobs begin executing according to their schedules
+3. Tasks with `enabled: false` in their config remain inactive
+
+**Disable phase:**
+
+1. When you run `serviceclaw service disable my-service`, all cron tasks are deactivated
+2. Scheduled executions are paused but job configurations are preserved
+
+**Duplicate detection:**
+
+- Re-installing a service will not create duplicate cron jobs
+- Existing jobs are matched by their `{serviceId}:{taskName}` name
+- If a job already exists, it is reused rather than recreated
+
+### Service-Side Task Handling
+
+Services receive cron task executions via the `cron:execute` SCP message type. The payload includes the task name and command, allowing the service to route to the appropriate handler.
+
+**Listening for cron tasks:**
+
+```typescript
+// In your service entry.ts
+client.on("cron.execute", (data) => {
+  const payload = data as {
+    taskName: string;
+    command: string;
+    // Additional metadata may be included
+  };
+
+  console.log(`Received cron task: ${payload.taskName}`);
+
+  // Route to appropriate handler
+  switch (payload.command) {
+    case "cleanup-temp-files":
+      handleCleanup();
+      break;
+    case "sync-data":
+      handleSync();
+      break;
+    default:
+      console.warn(`Unknown command: ${payload.command}`);
+  }
+});
+```
+
+**Complete handler example:**
+
+```typescript
+import { randomUUID } from "node:crypto";
+import WebSocket from "ws";
+
+// Inline SCP client with cron support
+function createSCPClient(serviceId: string, options: { name: string; version: string }) {
+  let ws: WebSocket | null = null;
+  let connected = false;
+  const handlers = new Map<string, Set<(data: unknown) => void>>();
+
+  function send(type: string, payload: unknown, requestId?: string): void {
+    if (!ws || !connected) return;
+    ws.send(
+      JSON.stringify({
+        type,
+        serviceId,
+        requestId: requestId ?? randomUUID(),
+        timestamp: new Date().toISOString(),
+        payload,
+      }),
+    );
+  }
+
+  function on(event: string, handler: (data: unknown) => void): void {
+    if (!handlers.has(event)) handlers.set(event, new Set());
+    handlers.get(event)!.add(handler);
+  }
+
+  function emit(event: string, data?: unknown): void {
+    handlers.get(event)?.forEach((h) => h(data));
+  }
+
+  async function connect(url: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      ws = new WebSocket(`${url}?serviceId=${serviceId}`);
+
+      ws.on("open", () => {
+        connected = true;
+        send("service.started", { name: options.name, version: options.version });
+        emit("connected");
+        resolve();
+      });
+
+      ws.on("message", (data) => {
+        try {
+          const msg = JSON.parse(data.toString());
+
+          if (msg.type === "cron.execute") {
+            // Handle cron task execution
+            emit("cron.execute", msg.payload);
+          } else if (msg.type === "agent.stop-request") {
+            emit("stop-requested", msg.payload);
+          }
+        } catch (err) {
+          console.error(`[${serviceId}] Error parsing message:`, err);
+        }
+      });
+
+      ws.on("close", (code, reason) => {
+        emit("disconnected", { code, reason: reason.toString() });
+      });
+
+      ws.on("error", (err) => reject(err));
+    });
+  }
+
+  return { connect, on, emit };
+}
+
+// Task handlers
+const taskHandlers: Record<string, (taskName: string, data?: unknown) => void> = {
+  "cleanup-temp-files": (taskName: string) => {
+    console.log(`[${taskName}] Cleaning up temporary files...`);
+    // Cleanup logic here
+  },
+  "sync-data": (taskName: string, data?: unknown) => {
+    const payload = data as { source?: string; target?: string } | undefined;
+    console.log(`[${taskName}] Syncing data from ${payload?.source ?? "remote"}...`);
+    // Sync logic here
+  },
+};
+
+// Main service
+const SERVICE_ID = "my-cron-service";
+const AGENT_URL = "ws://localhost:18789/__serviceclaw__/scp";
+
+async function main() {
+  const client = createSCPClient(SERVICE_ID, {
+    name: "My Cron Service",
+    version: "1.0.0",
+  });
+
+  // Handle cron task execution
+  client.on("cron.execute", (data) => {
+    const payload = data as {
+      taskName: string;
+      command: string;
+    };
+
+    const handler = taskHandlers[payload.command];
+    if (handler) {
+      try {
+        handler(payload.taskName, data);
+        console.log(`Task ${payload.taskName} completed successfully`);
+      } catch (err) {
+        console.error(`Task ${payload.taskName} failed:`, err);
+      }
+    } else {
+      console.warn(`No handler for command: ${payload.command}`);
+    }
+  });
+
+  await client.connect(AGENT_URL);
+  console.log("Service started and listening for cron tasks");
+}
+
+main().catch(console.error);
+```
+
+### Task Payload Structure
+
+When a cron task fires, the service receives a `cron:execute` message with the following payload structure:
+
+```typescript
+{
+  type: "cron:execute",
+  payload: {
+    taskName: string;        // The task name from the JSON config
+    command: string;         // The command from the JSON config
+    schedule: string;        // The cron expression that triggered
+    timezone: string;        // The timezone used for scheduling
+    timestamp: string;       // ISO timestamp of execution
+  }
+}
+```
+
+**Payload fields:**
+
+| Field       | Type   | Description                                           |
+| ----------- | ------ | ----------------------------------------------------- |
+| `taskName`  | string | Unique task identifier (from config `name` field)     |
+| `command`   | string | Command to execute (from config `command` field)      |
+| `schedule`  | string | The cron expression that triggered this execution     |
+| `timezone`  | string | Timezone identifier (e.g., "UTC", "America/New_York") |
+| `timestamp` | string | ISO 8601 timestamp of when the task fired             |
+
+The service uses the `taskName` and `command` fields to route the execution to the appropriate handler.
+
+### Troubleshooting Cron Tasks
+
+**Tasks not appearing after installation:**
+
+- Verify the `cron/` directory exists at the service root
+- Check that JSON files have the `.json` extension
+- Ensure JSON files are valid (no trailing commas, proper quotes)
+- Check the gateway logs for parsing errors: `serviceclaw gateway logs`
+- Verify the service has the `cron` capability in `manifest.json`
+
+**Tasks not executing:**
+
+- Confirm the service is enabled: `serviceclaw service status my-service`
+- Check that the task has `enabled: true` in its configuration
+- Verify the cron expression is valid (use an online cron validator)
+- Ensure the timezone is valid (IANA identifier like "UTC" or "America/New_York")
+- Check service logs for execution errors: `serviceclaw service logs my-service`
+
+**Invalid cron expressions:**
+
+Common mistakes in cron expressions:
+
+```
+# Wrong - only 4 fields
+0 2 * *
+
+# Correct - 5 fields (minute hour day month weekday)
+0 2 * * *
+
+# Wrong - invalid special characters
+0 2 * * ?
+
+# Correct - valid special characters only (* , - /)
+0 2 * * *
+```
+
+**Debugging commands:**
+
+```bash
+# List all cron jobs for a service
+serviceclaw service status my-service
+
+# View cron job details
+serviceclaw cron list --service my-service
+
+# Check service logs
+serviceclaw service logs my-service --follow
+
+# Manually trigger a task (for testing)
+serviceclaw cron trigger my-service:cleanup
+```
+
+**Best practices:**
+
+- Use descriptive task names that indicate the purpose
+- Include a description field for documentation
+- Set appropriate timezones for time-sensitive tasks
+- Use `waitForCompletion: true` for tasks that should not overlap
+- Log task execution details for debugging
+- Handle errors gracefully in task handlers
 
 ---
 
