@@ -1,0 +1,19 @@
+{
+  "id": "helloworld",
+  "name": "HelloWorld",
+  "description": "A simple welcome service that demonstrates basic SCP integration",
+  "version": "1.0.0",
+  "entry": "script/entry.ts",
+  "ui": {
+    "entry": "ui/index.html"
+  },
+  "trigger": {
+    "type": "web",
+    "path": "/helloworld"
+  },
+  "capabilities": {
+    "network": true,
+    "filesystem": true
+  },
+  "category": "custom"
+}

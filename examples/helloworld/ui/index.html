@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HelloWorld</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #1a1a2e;
+      color: #e4e4e7;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+    }
+
+    .welcome {
+      text-align: center;
+      padding: 40px;
+    }
+
+    h1 {
+      color: #10b981;
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+    }
+
+    p {
+      color: #a1a1aa;
+      font-size: 1.1rem;
+    }
+
+    .status {
+      margin-top: 20px;
+      padding: 10px 20px;
+      background: #10b981;
+      color: white;
+      border-radius: 6px;
+      display: inline-block;
+    }
+
+    .input-section {
+      margin-top: 30px;
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .input-field {
+      padding: 12px 16px;
+      font-size: 1rem;
+      border: 2px solid #374151;
+      border-radius: 8px;
+      background: #1f2937;
+      color: #e4e4e7;
+      width: 300px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .input-field:focus {
+      border-color: #10b981;
+    }
+
+    .input-field::placeholder {
+      color: #6b7280;
+    }
+
+    .save-btn {
+      padding: 12px 24px;
+      font-size: 1rem;
+      background: #10b981;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+    }
+
+    .save-btn:hover {
+      background: #059669;
+    }
+
+    .save-btn:active {
+      transform: scale(0.98);
+    }
+
+    .save-btn:disabled {
+      background: #374151;
+      cursor: not-allowed;
+    }
+
+    .result {
+      margin-top: 20px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      max-width: 400px;
+      text-align: left;
+    }
+
+    .result.success {
+      background: rgba(16, 185, 129, 0.2);
+      border: 1px solid #10b981;
+      color: #10b981;
+    }
+
+    .result.error {
+      background: rgba(239, 68, 68, 0.2);
+      border: 1px solid #ef4444;
+      color: #ef4444;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="welcome">
+    <h1>Hello World!</h1>
+    <p>Welcome to your first OpenClaw service.</p>
+    <div class="status">Connected to Agent</div>
+
+    <div class="input-section">
+      <input type="text" id="userInput" class="input-field" placeholder="Enter text to save..." />
+      <button id="saveBtn" class="save-btn">Save</button>
+    </div>
+
+    <div id="result" class="result" style="display: none;"></div>
+  </div>
+
+  <script>
+    const API_ENDPOINT = "/__openclaw__/services/helloworld/api/save";
+
+    async function saveContent(content) {
+      const resultDiv = document.getElementById("result");
+      const saveBtn = document.getElementById("saveBtn");
+      
+      try {
+        const response = await fetch(API_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ params: { content } })
+        });
+        
+        const result = await response.json();
+        resultDiv.style.display = "block";
+        saveBtn.disabled = false;
+        
+        if (response.ok && result.success) {
+          resultDiv.className = "result success";
+          resultDiv.textContent = `Saved to: ${result.data.path}`;
+        } else if (response.status === 503) {
+          resultDiv.className = "result error";
+          resultDiv.textContent = "Service is not running";
+        } else if (response.status === 504) {
+          resultDiv.className = "result error";
+          resultDiv.textContent = "Request timed out";
+        } else {
+          resultDiv.className = "result error";
+          resultDiv.textContent = `Error: ${result.error?.message || "Unknown error"}`;
+        }
+      } catch (err) {
+        resultDiv.style.display = "block";
+        saveBtn.disabled = false;
+        resultDiv.className = "result error";
+        resultDiv.textContent = `Network error: ${err.message}`;
+      }
+    }
+
+    document.getElementById("saveBtn").addEventListener("click", () => {
+      const input = document.getElementById("userInput");
+      const content = input.value.trim();
+
+      if (!content) {
+        const resultDiv = document.getElementById("result");
+        resultDiv.style.display = "block";
+        resultDiv.className = "result error";
+        resultDiv.textContent = "Please enter some text";
+        return;
+      }
+
+      document.getElementById("saveBtn").disabled = true;
+      saveContent(content);
+    });
+
+    document.getElementById("userInput").addEventListener("keypress", (e) => {
+      if (e.key === "Enter") {
+        document.getElementById("saveBtn").click();
+      }
+    });
+  </script>
+</body>
+
+</html>
