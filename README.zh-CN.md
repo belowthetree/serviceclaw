@@ -12,6 +12,8 @@
 
 > **与 OpenClaw 的关系**：ServiceClaw 是 [OpenClaw](https://github.com/openclaw/openclaw) 的一个分支，将**以技能为中心的模型**替换为**以服务为中心的架构**。OpenClaw 专注于短期工具调用，而 ServiceClaw 将服务视为一等公民——持久化、有状态且可交互。
 
+> **我们的愿景**：ServiceClaw 的最终目的是完成一个轻量化的插件式服务，同时 ServiceClaw 将具备服务自建能力，根据你的需要随时构建一个页面精美、功能丰富的服务。
+
 ---
 
 ## 什么是服务？
@@ -36,6 +38,11 @@ ServiceClaw 中的**服务**是一个长期运行的组件，可以：
 | **通信**     | 双向 WebSocket（SCP）  | 单向请求-响应 |
 | **触发方式** | 用户启动 / 定时 / 事件 | 工具调用      |
 | **状态**     | 有状态                 | 无状态        |
+
+### 服务示例
+
+<img src="docs/serviceclaw_helloworld.png" width=500/>
+<img src="docs/serviceclaw_todo.png" width=500/>
 
 ---
 

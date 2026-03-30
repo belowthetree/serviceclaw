@@ -16,6 +16,8 @@
 
 > **Relationship to OpenClaw**: ServiceClaw is a fork of [OpenClaw](https://github.com/openclaw/openclaw) that replaces the skill-centric model with a **service-centric architecture**. While OpenClaw focuses on short-lived tool invocations, ServiceClaw treats Services as first-class citizens — persistent, stateful, and interactive.
 
+> **Our Vision**: ServiceClaw's ultimate goal is to deliver a lightweight, plugin-based service architecture. Additionally, ServiceClaw will possess self-service capabilities, allowing you to build beautiful, feature-rich services on demand, tailored to your needs.
+
 ---
 
 ## What is a Service?
@@ -40,6 +42,11 @@ A **Service** in ServiceClaw is a long-running component that can:
 | **Communication** | Bidirectional WebSocket (SCP)  | Unidirectional request-response |
 | **Trigger**       | User start / scheduled / event | Tool invocation                 |
 | **State**         | Stateful                       | Stateless                       |
+
+### Service Example
+
+<img src="docs/serviceclaw_helloworld.png" width=500/>
+<img src="docs/serviceclaw_todo.png" width=500/>
 
 ---
 
